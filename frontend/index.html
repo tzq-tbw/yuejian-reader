@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>英语精读</title>
+<link rel="stylesheet" href="/style.css">
+<main>
+  <header>
+    <h1>英语精读</h1>
+    <nav aria-label="主菜单">
+      <button id="show-library">文章库</button>
+      <button data-review="word">单词复习</button>
+      <button data-review="sentence">长难句复习</button>
+    </nav>
+  </header>
+  <section id="home" data-page>
+  <form id="pdf">
+    <label>导入整套四六级 PDF<input type="file" name="file" accept=".pdf,application/pdf" required></label>
+    <button>导入试卷</button>
+  </form>
+  <form id="entry">
+    <label>文章标题<input name="title" required></label>
+    <label>英文正文<textarea name="body" rows="6" required></textarea></label>
+    <button>保存文章</button>
+  </form>
+  <p id="status" role="status"></p>
+  <h2>我的文章</h2>
+  <section id="library"></section>
+  </section>
+  <section id="reader" data-page hidden>
+    <h2 id="article-title"></h2>
+    <button id="edit-toggle">编辑正文</button>
+    <button id="translate-all">全文翻译</button>
+    <form id="editor" hidden>
+      <label>标题<input name="title" required></label>
+      <label>正文<textarea name="body" rows="8" required></textarea></label>
+      <button>保存修改</button>
+    </form>
+    <p id="reader-status" role="status"></p>
+    <div class="reader-grid">
+      <article id="original"></article>
+      <aside>
+        <h3>译文与解析</h3>
+        <div id="result" aria-live="polite"></div>
+      </aside>
+    </div>
+  </section>
+  <section id="review" data-page hidden>
+    <h2 id="review-title"></h2>
+    <div id="review-card" aria-live="polite"></div>
+  </section>
+</main>
+<script type="module" src="/app.js"></script>
+</html>

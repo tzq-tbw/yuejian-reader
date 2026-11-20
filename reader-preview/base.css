@@ -1,0 +1,3 @@
+@import "tailwindcss";
+@import "konsta/react/theme.css";
+@source "./node_modules/konsta/react";
