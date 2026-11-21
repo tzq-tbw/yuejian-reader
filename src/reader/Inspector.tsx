@@ -1,23 +1,84 @@
+import { useState } from "react";
 import {
   BookMarked,
   Languages,
   PanelRightClose,
   TextQuote,
 } from "lucide-react";
+import type { ArticleDetail } from "../data/types";
 import type {
   AnalysisResult,
   TranslationResult,
   WordCard,
 } from "../language/types";
 import type { ReadingAssistant } from "../language/useReadingAssistant";
+import { sentenceAt } from "../language/text";
 import { IconButton } from "../components/IconButton";
+import { AnalysisSections } from "../components/AnalysisSections";
+import { isPhraseSelection } from "../collection/sentence";
+import type {
+  CollectLongSentenceInput,
+  CollectOutcome,
+  CollectWordInput,
+} from "../collection/types";
 
 interface InspectorProps {
   assistant: ReadingAssistant;
+  article: ArticleDetail | null;
+  onCollectWord: (input: CollectWordInput) => Promise<CollectOutcome>;
+  onCollectLongSentence: (
+    input: CollectLongSentenceInput,
+  ) => Promise<CollectOutcome>;
   onCollapse: () => void;
 }
 
-function WordCardView({ card }: { card: WordCard }) {
+function CollectAction({
+  label,
+  successLabel = "已收藏",
+  onCollect,
+}: {
+  label: string;
+  successLabel?: string;
+  onCollect: () => Promise<CollectOutcome>;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState(false);
+
+  if (done) {
+    return (
+      <button type="button" className="collectAction done" disabled>
+        <BookMarked size={14} /> {successLabel}
+      </button>
+    );
+  }
+  return (
+    <button
+      type="button"
+      className="collectAction"
+      disabled={busy}
+      onClick={async () => {
+        if (busy) return;
+        setBusy(true);
+        try {
+          const outcome = await onCollect();
+          if (outcome === "created" || outcome === "existing") setDone(true);
+        } finally {
+          setBusy(false);
+        }
+      }}
+    >
+      <BookMarked size={14} /> {busy ? "收藏中…" : label}
+    </button>
+  );
+}
+
+function WordCardView({
+  card,
+  onCollectWord,
+}: {
+  card: WordCard;
+  onCollectWord: (input: CollectWordInput) => Promise<CollectOutcome>;
+}) {
   const meta = [card.phonetic, card.partOfSpeech].filter(Boolean).join(" · ");
   return (
     <>
@@ -39,16 +100,44 @@ function WordCardView({ card }: { card: WordCard }) {
           <p className="wordForms">{card.forms.join("；")}</p>
         </>
       )}
+      <div className="collectActionRow">
+        <CollectAction
+          key={`${card.target.articleId}:${card.target.start.paragraph}:${card.target.end.paragraph}:${card.word}:${card.sentence}`}
+          label="收藏词语"
+          onCollect={() =>
+            onCollectWord({
+              word: card.word,
+              sentence: card.sentence,
+              contextualMeaning: card.contextualMeaning,
+              commonMeaning: card.commonMeaning,
+              phonetic: card.phonetic,
+              partOfSpeech: card.partOfSpeech,
+              forms: card.forms,
+              articleId: card.target.articleId,
+              paragraphStart: card.target.start.paragraph,
+              paragraphEnd: card.target.end.paragraph,
+            })
+          }
+        />
+      </div>
     </>
   );
 }
 
 function TranslationView({
   result,
+  article,
   onRetryParagraph,
+  onCollectWord,
+  onCollectLongSentence,
 }: {
   result: TranslationResult;
+  article: ArticleDetail | null;
   onRetryParagraph: (index: number) => void;
+  onCollectWord: (input: CollectWordInput) => Promise<CollectOutcome>;
+  onCollectLongSentence: (
+    input: CollectLongSentenceInput,
+  ) => Promise<CollectOutcome>;
 }) {
   if (result.mode === "article" && result.rows) {
     return (
@@ -78,7 +167,26 @@ function TranslationView({
                 </button>
               </div>
             ) : row.translation ? (
-              <p className="translationText">{row.translation}</p>
+              <>
+                <p className="translationText">{row.translation}</p>
+                <div className="rowCollect">
+                  <CollectAction
+                    key={`${result.target.articleId}:${row.paragraph}:${row.source}`}
+                    label="收藏本段"
+                    onCollect={() =>
+                      onCollectLongSentence({
+                        sourceText: row.source,
+                        translation: row.translation,
+                        analysis: null,
+                        articleId: result.target.articleId,
+                        paragraphStart: row.paragraph,
+                        paragraphEnd: row.paragraph,
+                        wholeParagraph: true,
+                      })
+                    }
+                  />
+                </div>
+              </>
             ) : (
               <div className="rowError" role="alert">
                 <span>本段暂无译文，请重试。</span>
@@ -95,6 +203,37 @@ function TranslationView({
       </>
     );
   }
+
+  const phrase = isPhraseSelection(
+    result.source,
+    result.target.start.paragraph,
+    result.target.end.paragraph,
+  );
+  const collectPhrase = () => {
+    const paragraph =
+      article?.paragraphs[result.target.start.paragraph] ?? result.source;
+    const sentence =
+      sentenceAt(paragraph, result.target.start.offset) || result.source;
+    return onCollectWord({
+      word: result.source.trim(),
+      sentence,
+      contextualMeaning: result.translation,
+      commonMeaning: "",
+      articleId: result.target.articleId,
+      paragraphStart: result.target.start.paragraph,
+      paragraphEnd: result.target.end.paragraph,
+    });
+  };
+  const collectLongSentence = () =>
+    onCollectLongSentence({
+      sourceText: result.source,
+      translation: result.translation,
+      analysis: result.analysis ?? null,
+      articleId: result.target.articleId,
+      paragraphStart: result.target.start.paragraph,
+      paragraphEnd: result.target.end.paragraph,
+      wholeParagraph: result.mode === "paragraph",
+    });
 
   return (
     <>
@@ -116,71 +255,35 @@ function TranslationView({
           <AnalysisSections result={result.analysis} />
         </>
       )}
+      <div className="collectActionRow">
+        {phrase ? (
+          <CollectAction
+            key={`${result.target.articleId}:${result.source}:${result.translation}`}
+            label="收藏短语"
+            successLabel="已收藏短语"
+            onCollect={collectPhrase}
+          />
+        ) : (
+          <CollectAction
+            key={`${result.target.articleId}:${result.source}:${result.translation}`}
+            label="收藏长难句"
+            onCollect={collectLongSentence}
+          />
+        )}
+      </div>
     </>
   );
 }
 
-function AnalysisSections({ result }: { result: AnalysisResult }) {
-  const hasContent =
-    result.trunk ||
-    result.clauses.length > 0 ||
-    result.modifiers.length > 0 ||
-    result.collocations.length > 0;
-
-  if (!hasContent) {
-    return <p className="assistantMuted">模型没有识别到可展示的句法成分。</p>;
-  }
-  return (
-    <>
-      {result.trunk && (
-        <>
-          <label>语法主干</label>
-          <p>{result.trunk}</p>
-        </>
-      )}
-      {result.clauses.length > 0 && (
-        <>
-          <label>从句</label>
-          <ul className="analysisList">
-            {result.clauses.map((clause, index) => (
-              <li key={index}>
-                {clause.text && <b>{clause.text}</b>}
-                {clause.explanation && <span>{clause.explanation}</span>}
-              </li>
-            ))}
-          </ul>
-        </>
-      )}
-      {result.modifiers.length > 0 && (
-        <>
-          <label>修饰关系</label>
-          <ul className="analysisList">
-            {result.modifiers.map((modifier, index) => (
-              <li key={index}>
-                <span>{modifier}</span>
-              </li>
-            ))}
-          </ul>
-        </>
-      )}
-      {result.collocations.length > 0 && (
-        <>
-          <label>短语搭配</label>
-          <ul className="analysisList">
-            {result.collocations.map((collocation, index) => (
-              <li key={index}>
-                {collocation.phrase && <b>{collocation.phrase}</b>}
-                {collocation.meaning && <span>{collocation.meaning}</span>}
-              </li>
-            ))}
-          </ul>
-        </>
-      )}
-    </>
-  );
-}
-
-function AnalysisView({ result }: { result: AnalysisResult }) {
+function AnalysisView({
+  result,
+  onCollectLongSentence,
+}: {
+  result: AnalysisResult;
+  onCollectLongSentence: (
+    input: CollectLongSentenceInput,
+  ) => Promise<CollectOutcome>;
+}) {
   return (
     <>
       <div className="kicker">
@@ -190,11 +293,33 @@ function AnalysisView({ result }: { result: AnalysisResult }) {
       <label>原句</label>
       <blockquote className="selectionQuote">{result.source}</blockquote>
       <AnalysisSections result={result} />
+      <div className="collectActionRow">
+        <CollectAction
+          key={`${result.target.articleId}:${result.source}`}
+          label="收藏长难句"
+          onCollect={() =>
+            onCollectLongSentence({
+              sourceText: result.source,
+              translation: null,
+              analysis: result,
+              articleId: result.target.articleId,
+              paragraphStart: result.target.start.paragraph,
+              paragraphEnd: result.target.end.paragraph,
+            })
+          }
+        />
+      </div>
     </>
   );
 }
 
-export function Inspector({ assistant, onCollapse }: InspectorProps) {
+export function Inspector({
+  assistant,
+  article,
+  onCollectWord,
+  onCollectLongSentence,
+  onCollapse,
+}: InspectorProps) {
   const { result, pending, error } = assistant;
   return (
     <aside className="inspector" aria-label="精读侧栏">
@@ -216,14 +341,24 @@ export function Inspector({ assistant, onCollapse }: InspectorProps) {
             </button>
           </div>
         )}
-        {result?.kind === "word" && <WordCardView card={result} />}
+        {result?.kind === "word" && (
+          <WordCardView card={result} onCollectWord={onCollectWord} />
+        )}
         {result?.kind === "translation" && (
           <TranslationView
             result={result}
+            article={article}
             onRetryParagraph={assistant.retryParagraph}
+            onCollectWord={onCollectWord}
+            onCollectLongSentence={onCollectLongSentence}
           />
         )}
-        {result?.kind === "analysis" && <AnalysisView result={result} />}
+        {result?.kind === "analysis" && (
+          <AnalysisView
+            result={result}
+            onCollectLongSentence={onCollectLongSentence}
+          />
+        )}
       </div>
     </aside>
   );

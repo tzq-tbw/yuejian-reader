@@ -66,6 +66,23 @@ describe("考试高频词表", () => {
     expect(vocabularyMatches("address", [])).toEqual([]);
   });
 
+  it("单表独有的词只返回所属类别", () => {
+    expect(vocabularyMatches("exactly")).toEqual([
+      { id: "cet4", label: "四级高频" },
+    ]);
+    expect(vocabularyMatches("environmental")).toEqual([
+      { id: "cet6", label: "六级高频" },
+    ]);
+    expect(vocabularyMatches("labor")).toEqual([
+      { id: "ky", label: "考研高频" },
+    ]);
+    expect(vocabularyMatches("exactly", [CET6_LIST])).toEqual([]);
+    expect(vocabularyMatches("environmental", [CET4_LIST])).toEqual([]);
+    expect(vocabularyMatches("labor", [POSTGRADUATE_LIST])).toEqual([
+      { id: "ky", label: "考研高频" },
+    ]);
+  });
+
   it("没有命中时返回空列表", () => {
     expect(vocabularyMatches("quasar")).toEqual([]);
   });

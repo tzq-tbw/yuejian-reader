@@ -874,4 +874,322 @@ footer span { margin-left: auto; }
 .analysisList li b { display: block; color: #2b4260; }
 .analysisList li span { display: block; }
 .wordForms { color: #4a5d76; }
+
+/* 收藏页与复习页 */
+.pageNote { color: #7b8aa0; font-size: 12px; }
+.ghostButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid #d1dce9;
+  background: white;
+  color: #3f5f87;
+  border-radius: 9px;
+  padding: 6px 12px;
+  font: 12px "Segoe UI", "Microsoft YaHei", sans-serif;
+}
+.ghostButton:hover { background: #f1f5fb; }
+.libTop > .ghostButton { margin-left: auto; }
+.collectTabs {
+  display: flex;
+  gap: 4px;
+  flex: none;
+  padding: 10px 26px 0;
+  border-bottom: 1px solid var(--line);
+  background: white;
+}
+.collectTabs button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 9px 9px 0 0;
+  background: transparent;
+  color: #607186;
+  padding: 9px 13px;
+  font: 13px "Segoe UI", "Microsoft YaHei", sans-serif;
+}
+.collectTabs button:hover { background: #f4f7fc; }
+.collectTabs button.selected {
+  color: #2459a3;
+  border-bottom-color: #2c65be;
+  background: #f3f7fd;
+  font-weight: 600;
+}
+.collectTabs em {
+  font-style: normal;
+  background: #edf1f7;
+  color: #7b8aa0;
+  border-radius: 9px;
+  padding: 0 7px;
+  font-size: 11px;
+}
+.collectTabs button.selected em { background: #e1ebfa; color: #2459a3; }
+.collectInner, .reviewInner { max-width: 820px; }
+.collectList { display: flex; flex-direction: column; gap: 14px; }
+.collectItem {
+  background: white;
+  border: 1px solid #e2e8f1;
+  border-radius: 12px;
+  padding: 16px 18px;
+}
+.collectHead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.collectHead h2 {
+  margin: 0;
+  font: normal 28px/1.2 Georgia, serif;
+  letter-spacing: -.02em;
+  color: #1d3552;
+  overflow-wrap: anywhere;
+}
+.collectHead h2.sentenceHeading { font: 600 18px/1.3 Georgia, serif; }
+.collectMetaLine { color: #7b8aa0; font-size: 12px; }
+.collectBadge {
+  background: #edf1f7;
+  color: #5b6f88;
+  border-radius: 999px;
+  padding: 2px 9px;
+  font-size: 11px;
+  white-space: nowrap;
+}
+.collectBadge.warn { background: #fff4dc; color: #8a5c12; }
+.collectItem blockquote,
+.reviewCard blockquote {
+  margin: 10px 0 4px;
+  padding: 10px 12px;
+  border-left: 3px solid #9bb5db;
+  background: #f3f7fc;
+  border-radius: 0 8px 8px 0;
+  font: italic 17px/1.6 Georgia, "Times New Roman", serif;
+  color: #2c3f57;
+  white-space: pre-wrap;
+}
+.fieldLabel {
+  display: block;
+  color: #687a90;
+  font-size: 12px;
+  margin: 14px 0 5px;
+}
+.collectItem p, .reviewCard p { line-height: 1.75; color: #3c4d63; margin: 4px 0; }
+.collectAnalysis .analysisList { margin-top: 2px; }
+.missingRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 7px 10px;
+  border: 1px dashed #d8c491;
+  border-radius: 8px;
+  background: #fffbf1;
+  font-size: 12px;
+  color: #7a5a1f;
+}
+.missingRow button {
+  border: 1px solid #d9c58f;
+  background: white;
+  color: #7a5a1f;
+  border-radius: 7px;
+  padding: 3px 10px;
+  font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.missingRow button:disabled { opacity: .55; cursor: default; }
+.collectFoot, .sentenceNav {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
+  border-top: 1px solid #eef2f7;
+  padding-top: 12px;
+}
+.collectFoot button, .sentenceNav button {
+  border: 1px solid #d1dce9;
+  background: white;
+  color: #3f5f87;
+  border-radius: 8px;
+  padding: 6px 11px;
+  font: 12px "Segoe UI", "Microsoft YaHei", sans-serif;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.collectFoot button:hover, .sentenceNav button:hover { background: #f1f5fb; }
+.collectFoot button:disabled, .sentenceNav button:disabled {
+  opacity: .5;
+  cursor: default;
+}
+.collectFoot button.danger {
+  color: #a83b3b;
+  border-color: #e5c9c9;
+  margin-left: auto;
+}
+.sentenceNav button:last-child { margin-left: auto; }
+.collectActionRow { display: flex; margin-top: 16px; }
+.content .collectAction {
+  margin-top: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid #2c65be;
+  background: #2c65be;
+  color: white;
+  border-radius: 9px;
+  padding: 7px 14px;
+  font-size: 13px;
+}
+.content .collectAction:hover { background: #2459a3; }
+.content .collectAction.done {
+  background: #e8f0fc;
+  border-color: #bcd0ea;
+  color: #2459a3;
+  cursor: default;
+}
+.content .collectAction:disabled { opacity: .8; }
+.rowCollect { margin-top: 8px; }
+
+.reviewMain .libTop { gap: 10px; }
+.reviewWindow { display: flex; flex-direction: column; gap: 14px; }
+.reviewHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+.reviewHead h2 {
+  margin: 0 0 4px;
+  font: 600 22px/1.3 Georgia, serif;
+  color: #243852;
+}
+.reviewStats { margin: 0; color: #687a90; font-size: 12px; }
+.reviewHead > .ghostButton { flex: none; }
+.reviewReminder {
+  padding: 10px 13px;
+  border-radius: 9px;
+  background: #f2f6fc;
+  border: 1px solid #dbe4f0;
+  color: #4d637f;
+  font-size: 12px;
+  line-height: 1.7;
+}
+.reviewReminder.done {
+  background: #eff8f2;
+  border-color: #cfe8d8;
+  color: #3c6b50;
+}
+.aiFocus {
+  border: 1px solid #dfe7f2;
+  border-radius: 10px;
+  background: #fbfcff;
+  padding: 11px 13px;
+}
+.aiFocusHead {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+  color: #3d5d85;
+  font-size: 12px;
+}
+.aiFocusHead b { color: #2d4a6e; }
+.aiFocusHead span { color: #7b8aa0; }
+.aiFocusHead button {
+  margin-left: auto;
+  border: 1px solid #b9cde8;
+  background: white;
+  color: #2459a3;
+  border-radius: 7px;
+  padding: 4px 10px;
+  font-size: 12px;
+}
+.aiFocusHead button:disabled { opacity: .55; cursor: default; }
+.focusList {
+  list-style: none;
+  margin: 9px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.focusList li { display: flex; gap: 9px; font-size: 12px; color: #46586f; }
+.focusList b { color: #2459a3; font: 600 14px Georgia, serif; }
+.aiFocusNote {
+  margin: 9px 0 0;
+  font-size: 12px;
+  color: #6b7c92;
+  line-height: 1.7;
+}
+.aiFocusNote.warn { color: #8a3535; }
+.reviewCard {
+  background: white;
+  border: 1px solid #e2e8f1;
+  border-radius: 13px;
+  padding: 18px 20px;
+  box-shadow: 0 4px 18px #1632530a;
+}
+.reviewCardTop {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  color: #7b8aa0;
+  font-size: 12px;
+}
+.reviewWord {
+  font: normal 34px/1.15 Georgia, serif;
+  letter-spacing: -.03em;
+  margin: 16px 0 8px;
+  color: #1d3552;
+  overflow-wrap: anywhere;
+}
+.reviewForgetNote { margin: 6px 0 0; color: #8a5c12; font-size: 12px; }
+.reviewReveal {
+  margin-top: 12px;
+  border: 1px solid #2c65be;
+  background: #2c65be;
+  color: white;
+  border-radius: 9px;
+  padding: 8px 20px;
+  font: 13px "Segoe UI", "Microsoft YaHei", sans-serif;
+}
+.reviewAnswer {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid #eef2f7;
+}
+.reviewAnswer .fieldLabel:first-child { margin-top: 0; }
+.reviewMeaning { font-size: 20px; font-weight: 600; color: #243852; }
+.ratingButtons { display: flex; gap: 10px; margin-top: 18px; }
+.ratingButtons button {
+  border-radius: 9px;
+  padding: 9px 24px;
+  font: 14px "Segoe UI", "Microsoft YaHei", sans-serif;
+  border: 1px solid #b3c7e3;
+  background: white;
+  color: #2c65be;
+}
+.ratingButtons button.remember {
+  background: #2c65be;
+  border-color: #2c65be;
+  color: white;
+}
+.ratingButtons button.forgot {
+  color: #9a4a2f;
+  border-color: #e2c3b4;
+  background: #fff8f5;
+}
+.ratingButtons button:disabled { opacity: .55; cursor: default; }
+.reviewEmpty { margin: 40px auto; }
+.reviewCard blockquote.reviewSentence { font-size: 20px; }
+
+@media (max-width: 1000px) {
+  .pageNote { display: none; }
+  .collectTabs { padding: 8px 12px 0; }
+  .collectFoot, .sentenceNav { flex-wrap: wrap; }
+}
 .assistantMuted { color: #6b7c92; font-size: 13px; }

@@ -22,6 +22,11 @@ import { captureSelection, wordSelectionFromMark, type CapturedSelection } from 
 
 interface ReaderViewProps {
   article: ArticleDetail | null;
+  paragraphTarget: {
+    articleId: number;
+    paragraphStart: number;
+    paragraphEnd: number;
+  } | null;
   sectionName: string | null;
   currentSectionId: string | null;
   editor: EditorState | null;
@@ -51,6 +56,7 @@ function pad(index: number) {
 
 export function ReaderView({
   article,
+  paragraphTarget,
   sectionName,
   currentSectionId,
   editor,
@@ -79,8 +85,20 @@ export function ReaderView({
   const dirty = isDraftDirty(editor);
 
   useEffect(() => {
-    if (!editor && paperRef.current) paperRef.current.scrollTop = 0;
-  }, [article?.id, editor]);
+    if (editor || !paperRef.current) return;
+    const paragraphStart =
+      paragraphTarget && paragraphTarget.articleId === article?.id
+        ? paragraphTarget.paragraphStart
+        : null;
+    const target =
+      paragraphStart === null
+        ? null
+        : paperRef.current.querySelector<HTMLElement>(
+            `p[data-i="${paragraphStart}"]`,
+          );
+    if (target) target.scrollIntoView({ block: "start" });
+    else paperRef.current.scrollTop = 0;
+  }, [article?.id, editor, paragraphTarget]);
 
   // 切换文章或进入编辑时关闭旧选区工具条，避免操作落到上一篇。
   useEffect(() => {

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { App as KonstaApp } from "konsta/react";
-import { BookOpen, LibraryBig } from "lucide-react";
+import { BookOpen, Bookmark, CalendarCheck, LibraryBig } from "lucide-react";
 import type {
   ArticleDetail,
   ArticleSummary,
@@ -9,6 +9,7 @@ import type {
   Section,
 } from "./data/types";
 import type { LanguageService } from "./language/types";
+import { createLanguageService } from "./language/service";
 import { useReadingAssistant } from "./language/useReadingAssistant";
 import type { CapturedSelection } from "./reader/selection";
 import { getApi, isTauriRuntime } from "./data";
@@ -21,6 +22,17 @@ import { LibraryPage } from "./library/LibraryPage";
 import { PasteDialog } from "./library/PasteDialog";
 import { ReaderView } from "./reader/ReaderView";
 import { Inspector } from "./reader/Inspector";
+import { CollectionPage } from "./collection/CollectionPage";
+import { ReviewPage } from "./review/ReviewPage";
+import type { ReviewCoach } from "./review/coach";
+import type {
+  CollectLongSentenceInput,
+  CollectOutcome,
+  CollectWordInput,
+} from "./collection/types";
+import { shouldConfirmLongSentence } from "./collection/sentence";
+import { packAnalysis } from "./collection/analysis";
+import { localDateKey } from "./review/schedule";
 import {
   isDraftDirty,
   type EditorState,
@@ -29,6 +41,15 @@ import type { ArticleDraft } from "./components/ArticleDraftFields";
 
 const UI_KEY = "yuejian.ui";
 const LAST_KEY = "yuejian.last";
+
+type AppView = "reader" | "library" | "collection" | "review";
+
+const VIEW_LABELS: Record<AppView, string> = {
+  reader: "阅读工作台",
+  library: "资料库",
+  collection: "收藏",
+  review: "复习",
+};
 
 interface WorkspaceData {
   sections: Section[];
@@ -77,9 +98,11 @@ async function fetchArticle(api: ReaderApi, articleId: number) {
 export function App({
   api = getApi(),
   language,
+  coach,
 }: {
   api?: ReaderApi;
   language?: LanguageService;
+  coach?: ReviewCoach;
 }) {
   const [sections, setSections] = useState<Section[]>([]);
   const [articlesBySection, setArticlesBySection] = useState<
@@ -88,9 +111,14 @@ export function App({
   const [libraryGroups, setLibraryGroups] = useState<LibraryGroup[]>([]);
   const [loading, setLoading] = useState(true);
   const [libraryLoading, setLibraryLoading] = useState(false);
-  const [view, setView] = useState<"reader" | "library">("reader");
+  const [view, setView] = useState<AppView>("reader");
   const [currentSectionId, setCurrentSectionId] = useState<string | null>(null);
   const [currentArticle, setCurrentArticle] = useState<ArticleDetail | null>(null);
+  const [paragraphTarget, setParagraphTarget] = useState<{
+    articleId: number;
+    paragraphStart: number;
+    paragraphEnd: number;
+  } | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [editor, setEditor] = useState<EditorState | null>(null);
   const [editorError, setEditorError] = useState("");
@@ -111,7 +139,9 @@ export function App({
   const [pasteDialog, setPasteDialog] = useState<{
     returnFocus: HTMLElement | null;
   } | null>(null);
-  const assistant = useReadingAssistant(currentArticle, language);
+  const [builtinLanguage] = useState(() => createLanguageService());
+  const languageService = language ?? builtinLanguage;
+  const assistant = useReadingAssistant(currentArticle, languageService);
   const openAssistantSide = () => setSideOpen(true);
   const askWord = (selection: CapturedSelection) => {
     openAssistantSide();
@@ -165,6 +195,7 @@ export function App({
       const { article, memberships: nextMemberships } = await fetchArticle(api, articleId);
       setCurrentArticle(article);
       setCurrentSectionId(sectionId ?? nextMemberships[0]?.id ?? null);
+      setParagraphTarget(null);
       setEditor(null);
       setEditorError("");
       writeJson(LAST_KEY, {
@@ -299,7 +330,7 @@ export function App({
   );
 
   const openArticleFromLibrary = useCallback(
-    async (articleId: number) => {
+    async (articleId: number, paragraphStart?: number, paragraphEnd?: number) => {
       if (editor) {
         const saved = await saveEditor();
         if (!saved) return;
@@ -312,6 +343,15 @@ export function App({
         setView("reader");
         setCurrentArticle(article);
         setCurrentSectionId(nextMemberships[0]?.id ?? null);
+        setParagraphTarget(
+          paragraphStart === undefined
+            ? null
+            : {
+                articleId,
+                paragraphStart,
+                paragraphEnd: paragraphEnd ?? paragraphStart,
+              },
+        );
         setEditor(null);
         setEditorError("");
         if (nextMemberships[0]) {
@@ -329,7 +369,7 @@ export function App({
   );
 
   const navigate = useCallback(
-    async (next: "reader" | "library") => {
+    async (next: AppView) => {
       if (next === view) return;
       if (editor) {
         const saved = await saveEditor();
@@ -440,6 +480,63 @@ export function App({
     [api, refreshAll, notify],
   );
 
+  const collectWord = useCallback(
+    async (input: CollectWordInput): Promise<CollectOutcome> => {
+      try {
+        const result = await api.addWordFavorite({
+          ...input,
+          today: localDateKey(),
+        });
+        notify(
+          result.created
+            ? `已收藏词语「${input.word}」`
+            : `「${input.word}」与原句已在生词本中`,
+        );
+        return result.created ? "created" : "existing";
+      } catch (cause) {
+        notify(`收藏词语失败：${errorMessage(cause)}`, "error");
+        return "error";
+      }
+    },
+    [api, notify],
+  );
+
+  const collectLongSentence = useCallback(
+    async (input: CollectLongSentenceInput): Promise<CollectOutcome> => {
+      if (
+        (input.wholeParagraph ||
+          shouldConfirmLongSentence(
+            input.sourceText,
+            input.paragraphStart,
+            input.paragraphEnd,
+          )) &&
+        !window.confirm("是否加入长难句复习？")
+      ) {
+        return "cancelled";
+      }
+      try {
+        const result = await api.addLongSentenceFavorite({
+          sourceText: input.sourceText,
+          translation: input.translation ?? null,
+          analysis: input.analysis ? packAnalysis(input.analysis) : null,
+          articleId: input.articleId,
+          paragraphStart: input.paragraphStart,
+          paragraphEnd: input.paragraphEnd,
+        });
+        notify(
+          result.created
+            ? "已收藏长难句，可在收藏页查看"
+            : "这条长难句已在收藏中，未重复新增",
+        );
+        return result.created ? "created" : "existing";
+      } catch (cause) {
+        notify(`收藏长难句失败：${errorMessage(cause)}`, "error");
+        return "error";
+      }
+    },
+    [api, notify],
+  );
+
   const onPasteCreated = useCallback(
     async (article: ArticleDetail) => {
       const data = await refreshAll();
@@ -475,9 +572,7 @@ export function App({
             阅间
           </div>
           <i />
-          <span className="crumb">
-            {view === "reader" ? "阅读工作台" : "资料库"}
-          </span>
+          <span className="crumb">{VIEW_LABELS[view]}</span>
           <div className="local">
             <b />
             {runtimeLabel}
@@ -505,6 +600,26 @@ export function App({
             >
               <LibraryBig />
               <small>资料库</small>
+            </button>
+            <button
+              type="button"
+              className={`navbtn${view === "collection" ? " current" : ""}`}
+              title="收藏"
+              aria-current={view === "collection" ? "page" : undefined}
+              onClick={() => void navigate("collection")}
+            >
+              <Bookmark />
+              <small>收藏</small>
+            </button>
+            <button
+              type="button"
+              className={`navbtn${view === "review" ? " current" : ""}`}
+              title="复习"
+              aria-current={view === "review" ? "page" : undefined}
+              onClick={() => void navigate("review")}
+            >
+              <CalendarCheck />
+              <small>复习</small>
             </button>
           </nav>
 
@@ -554,6 +669,7 @@ export function App({
             ) : (
               <ReaderView
                 article={currentArticle}
+                paragraphTarget={paragraphTarget}
                 sectionName={
                   sections.find((section) => section.id === currentSectionId)?.name ??
                   null
@@ -594,7 +710,7 @@ export function App({
                 }}
               />
             )
-          ) : (
+          ) : view === "library" ? (
             <LibraryPage
               api={api}
               groups={libraryGroups}
@@ -614,11 +730,33 @@ export function App({
               }}
               notify={notify}
             />
+          ) : view === "collection" ? (
+            <CollectionPage
+              api={api}
+              language={languageService}
+              onOpenArticle={(articleId, paragraphStart, paragraphEnd) =>
+                void openArticleFromLibrary(articleId, paragraphStart, paragraphEnd)
+              }
+              notify={notify}
+            />
+          ) : (
+            <ReviewPage
+              api={api}
+              language={languageService}
+              coach={coach}
+              onOpenArticle={(articleId, paragraphStart, paragraphEnd) =>
+                void openArticleFromLibrary(articleId, paragraphStart, paragraphEnd)
+              }
+              notify={notify}
+            />
           )}
 
           {view === "reader" && sideOpen && (
             <Inspector
               assistant={assistant}
+              article={currentArticle}
+              onCollectWord={collectWord}
+              onCollectLongSentence={collectLongSentence}
               onCollapse={() => setSideOpen(false)}
             />
           )}

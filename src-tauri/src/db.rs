@@ -1,3 +1,4 @@
+use crate::review::{initial_due_date, is_valid_date, next_schedule, Rating};
 use rusqlite::{params, Connection, OptionalExtension, Row, TransactionBehavior};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
@@ -118,6 +119,121 @@ pub struct LibraryGroup {
 }
 
 // ---------------------------------------------------------------------------
+// 收藏与复习数据结构（camelCase 与 src/data/types.ts 对应）
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WordFavorite {
+    pub id: i64,
+    pub word: String,
+    pub normalized_word: String,
+    pub sentence: String,
+    pub normalized_sentence: String,
+    pub article_id: Option<i64>,
+    pub article_title: String,
+    pub paragraph_start: i64,
+    pub paragraph_end: i64,
+    pub contextual_meaning: String,
+    pub common_meaning: String,
+    pub phonetic: Option<String>,
+    pub part_of_speech: Option<String>,
+    pub forms: Vec<String>,
+    pub created_at: String,
+    pub stage: Option<i64>,
+    pub due_date: Option<String>,
+    pub forgotten_count: i64,
+    pub forgotten_today: bool,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LongSentenceFavorite {
+    pub id: i64,
+    pub source_text: String,
+    pub translation: Option<String>,
+    pub analysis: Option<String>,
+    pub article_id: Option<i64>,
+    pub article_title: String,
+    pub paragraph_start: i64,
+    pub paragraph_end: i64,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FavoriteAddResult<T: Serialize> {
+    pub created: bool,
+    pub favorite: T,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AddWordFavoriteInput {
+    pub word: String,
+    pub sentence: String,
+    pub article_id: i64,
+    pub paragraph_start: i64,
+    pub paragraph_end: i64,
+    #[serde(default)]
+    pub contextual_meaning: String,
+    #[serde(default)]
+    pub common_meaning: String,
+    #[serde(default)]
+    pub phonetic: Option<String>,
+    #[serde(default)]
+    pub part_of_speech: Option<String>,
+    #[serde(default)]
+    pub forms: Vec<String>,
+    /// 收藏当天的本机日历日；首次复习日期由后端按“次日”计算。
+    pub today: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AddLongSentenceInput {
+    pub source_text: String,
+    #[serde(default)]
+    pub translation: Option<String>,
+    #[serde(default)]
+    pub analysis: Option<String>,
+    pub article_id: i64,
+    pub paragraph_start: i64,
+    pub paragraph_end: i64,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FillLongSentenceInput {
+    pub id: i64,
+    #[serde(default)]
+    pub translation: Option<String>,
+    #[serde(default)]
+    pub analysis: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReviewEventInput {
+    pub favorite_id: i64,
+    pub round_id: String,
+    pub reveal_id: String,
+    pub rating: String,
+    pub local_date: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReviewEventResult {
+    pub favorite_id: i64,
+    pub rating: String,
+    pub stage: i64,
+    pub due_date: String,
+    pub recorded: bool,
+}
+
+// ---------------------------------------------------------------------------
 // 迁移
 // ---------------------------------------------------------------------------
 
@@ -142,6 +258,11 @@ pub const MIGRATIONS: &[Migration] = &[
         version: 3,
         name: "suite_import",
         sql: include_str!("../migrations/0003_suite_import.sql"),
+    },
+    Migration {
+        version: 4,
+        name: "collection_review",
+        sql: include_str!("../migrations/0004_collection_review.sql"),
     },
 ];
 
@@ -896,6 +1017,499 @@ pub fn remove_article_from_section(
 }
 
 // ---------------------------------------------------------------------------
+// 收藏与复习
+// ---------------------------------------------------------------------------
+
+/// 去重键规范化：忽略英文大小写，合并连续空白，保留词序与标点。
+pub fn normalize_collection_key(value: &str) -> String {
+    value
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_lowercase()
+}
+
+fn trimmed(value: &str) -> Option<String> {
+    let value = value.trim();
+    if value.is_empty() {
+        None
+    } else {
+        Some(value.to_string())
+    }
+}
+
+fn normalized_optional(value: Option<&str>) -> Option<String> {
+    value.and_then(trimmed)
+}
+
+fn article_title(conn: &Connection, article_id: i64) -> Result<String, String> {
+    conn.query_row(
+        "SELECT title FROM articles WHERE id = ?1",
+        params![article_id],
+        |row| row.get(0),
+    )
+    .optional()
+    .map_err(|e| e.to_string())?
+    .ok_or_else(|| "找不到来源文章".to_string())
+}
+
+fn validate_paragraph_range(start: i64, end: i64) -> Result<(), String> {
+    if start < 0 || end < start {
+        return Err("段落范围不合法".into());
+    }
+    Ok(())
+}
+
+fn parse_forms(raw: &str) -> Vec<String> {
+    serde_json::from_str::<Vec<String>>(raw).unwrap_or_default()
+}
+
+fn normalize_analysis_json(raw: Option<&str>) -> Result<Option<String>, String> {
+    let Some(raw) = raw.map(str::trim).filter(|value| !value.is_empty()) else {
+        return Ok(None);
+    };
+    let value: serde_json::Value =
+        serde_json::from_str(raw).map_err(|_| "解析内容格式不合法".to_string())?;
+    if !value.is_object() {
+        return Err("解析内容格式不合法".into());
+    }
+    Ok(Some(serde_json::to_string(&value).map_err(|e| e.to_string())?))
+}
+
+const WORD_SELECT: &str = "
+    SELECT w.id, w.word, w.normalized_word, w.sentence, w.normalized_sentence,
+           w.article_id, w.article_title, w.paragraph_start, w.paragraph_end,
+           w.contextual_meaning, w.common_meaning, w.phonetic, w.part_of_speech,
+           w.forms, w.created_at, s.stage, s.due_date,
+           (SELECT COUNT(*) FROM review_events e
+             WHERE e.favorite_id = w.id AND e.rating = 'forgotten') AS forgotten_count,
+           EXISTS(SELECT 1 FROM review_events e
+                   WHERE e.favorite_id = w.id AND e.rating = 'forgotten'
+                     AND e.local_date = ?1) AS forgotten_today
+    FROM word_favorites w
+    LEFT JOIN review_schedules s ON s.favorite_id = w.id";
+
+fn row_to_word_favorite(row: &Row<'_>) -> rusqlite::Result<WordFavorite> {
+    let forms: String = row.get(13)?;
+    Ok(WordFavorite {
+        id: row.get(0)?,
+        word: row.get(1)?,
+        normalized_word: row.get(2)?,
+        sentence: row.get(3)?,
+        normalized_sentence: row.get(4)?,
+        article_id: row.get(5)?,
+        article_title: row.get(6)?,
+        paragraph_start: row.get(7)?,
+        paragraph_end: row.get(8)?,
+        contextual_meaning: row.get(9)?,
+        common_meaning: row.get(10)?,
+        phonetic: row.get(11)?,
+        part_of_speech: row.get(12)?,
+        forms: parse_forms(&forms),
+        created_at: row.get(14)?,
+        stage: row.get(15)?,
+        due_date: row.get(16)?,
+        forgotten_count: row.get(17)?,
+        forgotten_today: row.get::<_, i64>(18)? != 0,
+    })
+}
+
+fn get_word_favorite(
+    conn: &Connection,
+    id: i64,
+    today: &str,
+) -> Result<WordFavorite, String> {
+    conn.query_row(
+        &format!("{WORD_SELECT} WHERE w.id = ?2"),
+        params![today, id],
+        row_to_word_favorite,
+    )
+    .optional()
+    .map_err(|e| e.to_string())?
+    .ok_or_else(|| "找不到这条词语收藏".to_string())
+}
+
+pub fn list_word_favorites(conn: &Connection, today: &str) -> Result<Vec<WordFavorite>, String> {
+    if !is_valid_date(today) {
+        return Err("日期必须使用 YYYY-MM-DD 格式".into());
+    }
+    let mut stmt = conn
+        .prepare(&format!(
+            "{WORD_SELECT} ORDER BY w.created_at DESC, w.id DESC"
+        ))
+        .map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map(params![today], row_to_word_favorite)
+        .map_err(|e| e.to_string())?;
+    rows.collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(|e| e.to_string())
+}
+
+/// 取全部到期及逾期词卡。当天曾被忘记但尚未最终记得的卡也保留在今日窗口，
+/// 以便重开同日复习时继续本轮；最终记得后到期日已在未来，不再重复计入。
+pub fn list_due_word_favorites(
+    conn: &Connection,
+    today: &str,
+) -> Result<Vec<WordFavorite>, String> {
+    if !is_valid_date(today) {
+        return Err("日期必须使用 YYYY-MM-DD 格式".into());
+    }
+    let mut stmt = conn
+        .prepare(&format!(
+            "{WORD_SELECT}
+             WHERE s.due_date <= ?1
+                OR EXISTS(
+                    SELECT 1 FROM review_events latest
+                    WHERE latest.favorite_id = w.id
+                      AND latest.local_date = ?1
+                      AND latest.id = (
+                          SELECT MAX(todays.id) FROM review_events todays
+                          WHERE todays.favorite_id = w.id AND todays.local_date = ?1
+                      )
+                      AND latest.rating = 'forgotten'
+                )
+             ORDER BY s.due_date, w.created_at, w.id"
+        ))
+        .map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map(params![today], row_to_word_favorite)
+        .map_err(|e| e.to_string())?;
+    rows.collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(|e| e.to_string())
+}
+
+pub fn add_word_favorite(
+    conn: &mut Connection,
+    input: &AddWordFavoriteInput,
+) -> Result<FavoriteAddResult<WordFavorite>, String> {
+    let word = trimmed(&input.word).ok_or_else(|| "词语不能为空".to_string())?;
+    let sentence = trimmed(&input.sentence).ok_or_else(|| "原句不能为空".to_string())?;
+    if !is_valid_date(&input.today) {
+        return Err("收藏日期必须使用 YYYY-MM-DD 格式".into());
+    }
+    let due_date = initial_due_date(&input.today)?;
+    validate_paragraph_range(input.paragraph_start, input.paragraph_end)?;
+    let normalized_word = normalize_collection_key(&word);
+    let normalized_sentence = normalize_collection_key(&sentence);
+    if normalized_word.is_empty() || normalized_sentence.is_empty() {
+        return Err("词语和原句不能为空".into());
+    }
+    let title = article_title(conn, input.article_id)?;
+    let forms = serde_json::to_string(&input.forms).map_err(|e| e.to_string())?;
+    let phonetic = normalized_optional(input.phonetic.as_deref());
+    let part_of_speech = normalized_optional(input.part_of_speech.as_deref());
+
+    let tx = conn
+        .transaction_with_behavior(TransactionBehavior::Immediate)
+        .map_err(|e| e.to_string())?;
+    let existing: Option<i64> = tx
+        .query_row(
+            "SELECT id FROM word_favorites
+             WHERE normalized_word = ?1 AND normalized_sentence = ?2",
+            params![normalized_word, normalized_sentence],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|e| e.to_string())?;
+    if let Some(id) = existing {
+        let favorite = get_word_favorite(&tx, id, &input.today)?;
+        tx.commit().map_err(|e| format!("提交收藏失败：{e}"))?;
+        return Ok(FavoriteAddResult {
+            created: false,
+            favorite,
+        });
+    }
+
+    tx.execute(
+        "INSERT INTO word_favorites
+            (word, normalized_word, sentence, normalized_sentence, article_id,
+             article_title, paragraph_start, paragraph_end, contextual_meaning,
+             common_meaning, phonetic, part_of_speech, forms)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+        params![
+            word,
+            normalized_word,
+            sentence,
+            normalized_sentence,
+            input.article_id,
+            title,
+            input.paragraph_start,
+            input.paragraph_end,
+            input.contextual_meaning.trim(),
+            input.common_meaning.trim(),
+            phonetic,
+            part_of_speech,
+            forms
+        ],
+    )
+    .map_err(|e| format!("保存词语收藏失败：{e}"))?;
+    let id = tx.last_insert_rowid();
+    tx.execute(
+        "INSERT INTO review_schedules (favorite_id, stage, due_date) VALUES (?1, 0, ?2)",
+        params![id, due_date],
+    )
+    .map_err(|e| format!("建立复习排程失败：{e}"))?;
+    tx.commit().map_err(|e| format!("提交词语收藏失败：{e}"))?;
+
+    Ok(FavoriteAddResult {
+        created: true,
+        favorite: get_word_favorite(conn, id, &input.today)?,
+    })
+}
+
+pub fn remove_word_favorite(conn: &Connection, id: i64) -> Result<bool, String> {
+    let changed = conn
+        .execute("DELETE FROM word_favorites WHERE id = ?1", params![id])
+        .map_err(|e| e.to_string())?;
+    Ok(changed > 0)
+}
+
+fn row_to_long_sentence(row: &Row<'_>) -> rusqlite::Result<LongSentenceFavorite> {
+    Ok(LongSentenceFavorite {
+        id: row.get(0)?,
+        source_text: row.get(1)?,
+        translation: row.get(2)?,
+        analysis: row.get(3)?,
+        article_id: row.get(4)?,
+        article_title: row.get(5)?,
+        paragraph_start: row.get(6)?,
+        paragraph_end: row.get(7)?,
+        created_at: row.get(8)?,
+        updated_at: row.get(9)?,
+    })
+}
+
+const LONG_SENTENCE_SELECT: &str = "
+    SELECT id, source_text, translation, analysis, article_id, article_title,
+           paragraph_start, paragraph_end, created_at, updated_at
+    FROM long_sentence_favorites";
+
+fn get_long_sentence(
+    conn: &Connection,
+    id: i64,
+) -> Result<LongSentenceFavorite, String> {
+    conn.query_row(
+        &format!("{LONG_SENTENCE_SELECT} WHERE id = ?1"),
+        params![id],
+        row_to_long_sentence,
+    )
+    .optional()
+    .map_err(|e| e.to_string())?
+    .ok_or_else(|| "找不到这条长难句收藏".to_string())
+}
+
+pub fn list_long_sentence_favorites(
+    conn: &Connection,
+) -> Result<Vec<LongSentenceFavorite>, String> {
+    let mut stmt = conn
+        .prepare(&format!(
+            "{LONG_SENTENCE_SELECT} ORDER BY created_at DESC, id DESC"
+        ))
+        .map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map([], row_to_long_sentence)
+        .map_err(|e| e.to_string())?;
+    rows.collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(|e| e.to_string())
+}
+
+pub fn add_long_sentence_favorite(
+    conn: &mut Connection,
+    input: &AddLongSentenceInput,
+) -> Result<FavoriteAddResult<LongSentenceFavorite>, String> {
+    let source_text = trimmed(&input.source_text).ok_or_else(|| "原文不能为空".to_string())?;
+    validate_paragraph_range(input.paragraph_start, input.paragraph_end)?;
+    let normalized = normalize_collection_key(&source_text);
+    if normalized.is_empty() {
+        return Err("原文不能为空".into());
+    }
+    let title = article_title(conn, input.article_id)?;
+    let translation = normalized_optional(input.translation.as_deref());
+    let analysis = normalize_analysis_json(input.analysis.as_deref())?;
+    let source_key = format!(
+        "{}:{}:{}:{}",
+        input.article_id, input.paragraph_start, input.paragraph_end, normalized
+    );
+
+    let tx = conn
+        .transaction_with_behavior(TransactionBehavior::Immediate)
+        .map_err(|e| e.to_string())?;
+    let existing: Option<i64> = tx
+        .query_row(
+            "SELECT id FROM long_sentence_favorites WHERE source_key = ?1",
+            params![source_key],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|e| e.to_string())?;
+    if let Some(id) = existing {
+        let favorite = get_long_sentence(&tx, id)?;
+        tx.commit().map_err(|e| format!("提交收藏失败：{e}"))?;
+        return Ok(FavoriteAddResult {
+            created: false,
+            favorite,
+        });
+    }
+
+    tx.execute(
+        "INSERT INTO long_sentence_favorites
+            (source_text, source_key, translation, analysis, article_id,
+             article_title, paragraph_start, paragraph_end)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+        params![
+            source_text,
+            source_key,
+            translation,
+            analysis,
+            input.article_id,
+            title,
+            input.paragraph_start,
+            input.paragraph_end
+        ],
+    )
+    .map_err(|e| format!("保存长难句失败：{e}"))?;
+    let id = tx.last_insert_rowid();
+    tx.commit().map_err(|e| format!("提交长难句收藏失败：{e}"))?;
+
+    Ok(FavoriteAddResult {
+        created: true,
+        favorite: get_long_sentence(conn, id)?,
+    })
+}
+
+pub fn fill_long_sentence_favorite(
+    conn: &Connection,
+    input: &FillLongSentenceInput,
+) -> Result<LongSentenceFavorite, String> {
+    let current = get_long_sentence(conn, input.id)?;
+    let translation = current
+        .translation
+        .clone()
+        .or_else(|| normalized_optional(input.translation.as_deref()));
+    let analysis = match current.analysis {
+        Some(analysis) => Some(analysis),
+        None => normalize_analysis_json(input.analysis.as_deref())?,
+    };
+    if translation.is_none() && analysis.is_none() {
+        return Err("没有可补全的译文或解析".into());
+    }
+    conn.execute(
+        "UPDATE long_sentence_favorites
+         SET translation = ?1, analysis = ?2,
+             updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+         WHERE id = ?3",
+        params![translation, analysis, input.id],
+    )
+    .map_err(|e| format!("补全长难句失败：{e}"))?;
+    get_long_sentence(conn, input.id)
+}
+
+pub fn remove_long_sentence_favorite(conn: &Connection, id: i64) -> Result<bool, String> {
+    let changed = conn
+        .execute(
+            "DELETE FROM long_sentence_favorites WHERE id = ?1",
+            params![id],
+        )
+        .map_err(|e| e.to_string())?;
+    Ok(changed > 0)
+}
+
+fn current_schedule(conn: &Connection, favorite_id: i64) -> Result<(i64, String), String> {
+    conn.query_row(
+        "SELECT stage, due_date FROM review_schedules WHERE favorite_id = ?1",
+        params![favorite_id],
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    )
+    .optional()
+    .map_err(|e| e.to_string())?
+    .ok_or_else(|| "找不到这张词卡的排程".to_string())
+}
+
+/// 评分与排程在同一事务写入。同一揭晓（reveal_id）重复提交只记录一次。
+pub fn record_review_event(
+    conn: &mut Connection,
+    input: &ReviewEventInput,
+) -> Result<ReviewEventResult, String> {
+    let rating = Rating::parse(input.rating.trim())?;
+    if input.round_id.trim().is_empty() || input.reveal_id.trim().is_empty() {
+        return Err("缺少本轮或揭晓标识".into());
+    }
+    if !is_valid_date(&input.local_date) {
+        return Err("复习日期必须使用 YYYY-MM-DD 格式".into());
+    }
+
+    let tx = conn
+        .transaction_with_behavior(TransactionBehavior::Immediate)
+        .map_err(|e| e.to_string())?;
+    let existing: Option<(i64, String)> = tx
+        .query_row(
+            "SELECT favorite_id, rating FROM review_events WHERE reveal_id = ?1",
+            params![input.reveal_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()
+        .map_err(|e| e.to_string())?;
+    if let Some((favorite_id, existing_rating)) = existing {
+        let (stage, due_date) = current_schedule(&tx, favorite_id)?;
+        tx.commit().map_err(|e| format!("提交复习记录失败：{e}"))?;
+        return Ok(ReviewEventResult {
+            favorite_id,
+            rating: existing_rating,
+            stage,
+            due_date,
+            recorded: false,
+        });
+    }
+
+    let (stage, _) = current_schedule(&tx, input.favorite_id)?;
+    tx.execute(
+        "INSERT INTO review_events (favorite_id, round_id, reveal_id, rating, local_date)
+         VALUES (?1, ?2, ?3, ?4, ?5)",
+        params![
+            input.favorite_id,
+            input.round_id.trim(),
+            input.reveal_id.trim(),
+            rating.as_str(),
+            input.local_date
+        ],
+    )
+    .map_err(|e| format!("记录复习评分失败：{e}"))?;
+
+    // 本轮曾忘记：当天（含更早的轮次）已有 forgotten 事件。忘记本身也会写入事件，
+    // 因此评分后查询即可覆盖“最后一张忘记又立即再揭晓”的路径。
+    let forgotten_today: bool = tx
+        .query_row(
+            "SELECT 1 FROM review_events
+             WHERE favorite_id = ?1 AND rating = 'forgotten' AND local_date = ?2
+             LIMIT 1",
+            params![input.favorite_id, input.local_date],
+            |row| row.get::<_, i64>(0),
+        )
+        .optional()
+        .map_err(|e| e.to_string())?
+        .is_some();
+
+    let (next_stage, due_date) = next_schedule(stage, rating, forgotten_today, &input.local_date)?;
+    tx.execute(
+        "UPDATE review_schedules
+         SET stage = ?1, due_date = ?2, last_reviewed_on = ?3,
+             updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+         WHERE favorite_id = ?4",
+        params![next_stage, due_date, input.local_date, input.favorite_id],
+    )
+    .map_err(|e| format!("更新复习排程失败：{e}"))?;
+    tx.commit().map_err(|e| format!("提交复习记录失败：{e}"))?;
+
+    Ok(ReviewEventResult {
+        favorite_id: input.favorite_id,
+        rating: rating.as_str().to_string(),
+        stage: next_stage,
+        due_date,
+        recorded: true,
+    })
+}
+
+// ---------------------------------------------------------------------------
 // 文本处理
 // ---------------------------------------------------------------------------
 
@@ -1308,5 +1922,334 @@ mod tests {
         assert!(error.contains("正文为空"));
         assert_eq!(row_count(&conn, "suites"), 0);
         assert_eq!(row_count(&conn, "articles"), 0);
+    }
+
+    fn collection_article(conn: &mut Connection) -> i64 {
+        paste_article(
+            conn,
+            "Collection Source",
+            "We need to address the problem before the meeting.\n\nPlease write your address on the envelope.",
+            None,
+        )
+        .unwrap()
+        .summary
+        .id
+    }
+
+    fn add_word(
+        conn: &mut Connection,
+        article_id: i64,
+        word: &str,
+        sentence: &str,
+        today: &str,
+    ) -> WordFavorite {
+        add_word_favorite(
+            conn,
+            &AddWordFavoriteInput {
+                word: word.into(),
+                sentence: sentence.into(),
+                article_id,
+                paragraph_start: 0,
+                paragraph_end: 0,
+                contextual_meaning: "着手处理".into(),
+                common_meaning: "地址；演说".into(),
+                phonetic: Some("/əˈdres/".into()),
+                part_of_speech: Some("v.".into()),
+                forms: vec!["过去式: addressed".into()],
+                today: today.into(),
+            },
+        )
+        .unwrap()
+        .favorite
+    }
+
+    fn add_long(
+        conn: &mut Connection,
+        article_id: i64,
+        text: &str,
+        translation: Option<&str>,
+        analysis: Option<&str>,
+    ) -> FavoriteAddResult<LongSentenceFavorite> {
+        add_long_sentence_favorite(
+            conn,
+            &AddLongSentenceInput {
+                source_text: text.into(),
+                translation: translation.map(str::to_string),
+                analysis: analysis.map(str::to_string),
+                article_id,
+                paragraph_start: 0,
+                paragraph_end: 0,
+            },
+        )
+        .unwrap()
+    }
+
+    fn rate(
+        conn: &mut Connection,
+        favorite_id: i64,
+        reveal: &str,
+        rating: &str,
+        local_date: &str,
+    ) -> ReviewEventResult {
+        record_review_event(
+            conn,
+            &ReviewEventInput {
+                favorite_id,
+                round_id: "round-1".into(),
+                reveal_id: format!("round-1:{favorite_id}:{reveal}"),
+                rating: rating.into(),
+                local_date: local_date.into(),
+            },
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn word_favorites_dedupe_by_normalized_word_and_sentence() {
+        let mut conn = memory_db();
+        let article_id = collection_article(&mut conn);
+        let first = add_word(
+            &mut conn,
+            article_id,
+            "address",
+            "We need to address the problem before the meeting.",
+            "2026-11-21",
+        );
+        let repeated = add_word_favorite(
+            &mut conn,
+            &AddWordFavoriteInput {
+                word: "  ADDRESS ".into(),
+                sentence: "we  need\nto address the problem before the meeting.".into(),
+                article_id,
+                paragraph_start: 0,
+                paragraph_end: 0,
+                contextual_meaning: "另一条快照".into(),
+                common_meaning: "地址".into(),
+                phonetic: None,
+                part_of_speech: None,
+                forms: vec![],
+                today: "2026-11-21".into(),
+            },
+        )
+        .unwrap();
+        assert!(!repeated.created);
+        assert_eq!(repeated.favorite.id, first.id);
+        assert_eq!(repeated.favorite.contextual_meaning, "着手处理");
+        assert_eq!(row_count(&conn, "word_favorites"), 1);
+
+        // 同一个词换一句原句可独立收藏
+        let second = add_word(
+            &mut conn,
+            article_id,
+            "address",
+            "Please write your address on the envelope.",
+            "2026-11-21",
+        );
+        assert_ne!(second.id, first.id);
+        assert_eq!(row_count(&conn, "word_favorites"), 2);
+        let listed = list_word_favorites(&conn, "2026-11-22").unwrap();
+        assert_eq!(listed.len(), 2);
+        assert_eq!(listed[0].normalized_sentence, "please write your address on the envelope.");
+    }
+
+    #[test]
+    fn favorite_snapshots_survive_article_edits() {
+        let mut conn = memory_db();
+        let article_id = collection_article(&mut conn);
+        let favorite = add_word(
+            &mut conn,
+            article_id,
+            "address",
+            "We need to address the problem before the meeting.",
+            "2026-11-21",
+        );
+        update_article(
+            &mut conn,
+            &UpdateArticleInput {
+                id: article_id,
+                title: "Edited Title".into(),
+                topic: "教育与学习".into(),
+                paragraphs: vec!["Edited body without the old sentence.".into()],
+                expected_version: 1,
+            },
+        )
+        .unwrap();
+        let reloaded = get_word_favorite(&conn, favorite.id, "2026-11-21").unwrap();
+        assert_eq!(
+            reloaded.sentence,
+            "We need to address the problem before the meeting."
+        );
+        assert_eq!(reloaded.article_title, "Collection Source");
+        // 再次收藏同一快照仍复用原记录，不被新文章覆盖
+        let repeated = add_word_favorite(
+            &mut conn,
+            &AddWordFavoriteInput {
+                word: "address".into(),
+                sentence: "We need to address the problem before the meeting.".into(),
+                article_id,
+                paragraph_start: 0,
+                paragraph_end: 0,
+                contextual_meaning: "".into(),
+                common_meaning: "".into(),
+                phonetic: None,
+                part_of_speech: None,
+                forms: vec![],
+                today: "2026-11-21".into(),
+            },
+        )
+        .unwrap();
+        assert!(!repeated.created);
+        assert_eq!(repeated.favorite.id, favorite.id);
+    }
+
+    #[test]
+    fn review_flow_updates_schedule_and_keeps_forgotten_card_for_the_same_day() {
+        let mut conn = memory_db();
+        let article_id = collection_article(&mut conn);
+        let word = add_word(
+            &mut conn,
+            article_id,
+            "address",
+            "We need to address the problem before the meeting.",
+            "2026-11-23",
+        );
+
+        assert_eq!(list_due_word_favorites(&conn, "2026-11-23").unwrap().len(), 0);
+        assert_eq!(list_due_word_favorites(&conn, "2026-11-24").unwrap().len(), 1);
+
+        let first = rate(&mut conn, word.id, "1", "remembered", "2026-11-24");
+        assert_eq!(first.stage, 1);
+        assert_eq!(first.due_date, "2026-11-26");
+        assert!(first.recorded);
+        assert_eq!(list_due_word_favorites(&conn, "2026-11-25").unwrap().len(), 0);
+
+        let forgotten = rate(&mut conn, word.id, "2", "forgotten", "2026-11-26");
+        assert_eq!(forgotten.stage, 0);
+        assert_eq!(forgotten.due_date, "2026-11-27");
+        // 同一天重开：最后一条当日事件是忘记，卡仍留在今日窗口
+        let same_day = list_due_word_favorites(&conn, "2026-11-26").unwrap();
+        assert_eq!(same_day.len(), 1);
+        assert!(same_day[0].forgotten_today);
+        assert_eq!(same_day[0].forgotten_count, 1);
+
+        let finally_remembered = rate(&mut conn, word.id, "3", "remembered", "2026-11-26");
+        assert_eq!(finally_remembered.stage, 0);
+        assert_eq!(finally_remembered.due_date, "2026-11-27");
+        // 最终记得后同日不再重复出现在复习窗口
+        assert_eq!(list_due_word_favorites(&conn, "2026-11-26").unwrap().len(), 0);
+        assert_eq!(list_due_word_favorites(&conn, "2026-11-27").unwrap().len(), 1);
+
+        // 重复点击同一次揭晓只记一次
+        let repeated = rate(&mut conn, word.id, "3", "remembered", "2026-11-26");
+        assert!(!repeated.recorded);
+        assert_eq!(repeated.stage, 0);
+        assert_eq!(row_count(&conn, "review_events"), 3);
+    }
+
+    #[test]
+    fn deleting_a_favorite_removes_it_from_the_active_schedule() {
+        let mut conn = memory_db();
+        let article_id = collection_article(&mut conn);
+        let word = add_word(
+            &mut conn,
+            article_id,
+            "address",
+            "We need to address the problem before the meeting.",
+            "2026-11-23",
+        );
+        rate(&mut conn, word.id, "1", "forgotten", "2026-11-24");
+        assert_eq!(row_count(&conn, "review_schedules"), 1);
+        assert_eq!(row_count(&conn, "review_events"), 1);
+
+        assert!(remove_word_favorite(&conn, word.id).unwrap());
+        assert_eq!(row_count(&conn, "word_favorites"), 0);
+        assert_eq!(row_count(&conn, "review_schedules"), 0);
+        assert_eq!(row_count(&conn, "review_events"), 0);
+        assert_eq!(list_due_word_favorites(&conn, "2026-11-24").unwrap().len(), 0);
+        assert!(record_review_event(
+            &mut conn,
+            &ReviewEventInput {
+                favorite_id: word.id,
+                round_id: "round-2".into(),
+                reveal_id: "round-2:deleted".into(),
+                rating: "remembered".into(),
+                local_date: "2026-11-24".into(),
+            },
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn long_sentences_reuse_the_same_place_and_fill_missing_answers() {
+        let mut conn = memory_db();
+        let article_id = collection_article(&mut conn);
+        let created = add_long(
+            &mut conn,
+            article_id,
+            "We need to address the problem before the meeting.",
+            Some("我们需要在会前处理这个问题。"),
+            None,
+        );
+        assert!(created.created);
+        assert!(created.favorite.analysis.is_none());
+
+        let repeated = add_long(
+            &mut conn,
+            article_id,
+            "We need to address the problem before the meeting.",
+            None,
+            None,
+        );
+        assert!(!repeated.created);
+        assert_eq!(repeated.favorite.id, created.favorite.id);
+        assert_eq!(row_count(&conn, "long_sentence_favorites"), 1);
+
+        assert!(fill_long_sentence_favorite(
+            &conn,
+            &FillLongSentenceInput {
+                id: created.favorite.id,
+                translation: None,
+                analysis: Some("不是 JSON".into()),
+            },
+        )
+        .is_err());
+
+        let filled = fill_long_sentence_favorite(
+            &conn,
+            &FillLongSentenceInput {
+                id: created.favorite.id,
+                translation: None,
+                analysis: Some(r#"{"trunk":"We need...","clauses":[],"modifiers":[],"collocations":[]}"#.into()),
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            filled.translation.as_deref(),
+            Some("我们需要在会前处理这个问题。")
+        );
+        assert!(filled.analysis.is_some());
+
+        let unchanged = fill_long_sentence_favorite(
+            &conn,
+            &FillLongSentenceInput {
+                id: created.favorite.id,
+                translation: Some("传入的新译文不应覆盖".into()),
+                analysis: Some(r#"{"trunk":"New analysis must not overwrite","clauses":[],"modifiers":[],"collocations":[]}"#.into()),
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            unchanged.translation.as_deref(),
+            Some("我们需要在会前处理这个问题。")
+        );
+        assert!(unchanged.analysis.as_deref().unwrap().contains("We need"));
+        assert!(!unchanged
+            .analysis
+            .as_deref()
+            .unwrap()
+            .contains("New analysis"));
+
+        assert!(remove_long_sentence_favorite(&conn, created.favorite.id).unwrap());
+        assert!(list_long_sentence_favorites(&conn).unwrap().is_empty());
     }
 }

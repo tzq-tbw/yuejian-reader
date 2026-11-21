@@ -6,8 +6,9 @@
  * 数据版本：39cfb9672c0906b63569e0453c2e6abfb9ab182a
  * 许可：https://github.com/skywind3000/ECDICT/blob/master/LICENSE
  *
- * 整理口径：选取 tag 含 cet6 的纯英文单词，按 frq（当代语料库词频排名，
- * 数值越小越高频）升序取前 1600 词；同排名依次按 bnc、字母排序。
+ * 整理口径：选取 tag 含 cet6 的词条，统一转为小写并仅保留纯英文单词
+ * （`^[a-z]+$`），排除 frq=0（无当代语料库排名）的词条；再按 frq
+ * （数值越小越高频）升序取前 1600 词，同排名依次按 bnc、字母排序。
  */
 export const CET6_WORDS: readonly string[] = [
   "state", "system", "program", "government", "point", "national", "business", "issue",

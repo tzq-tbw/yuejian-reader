@@ -1,14 +1,22 @@
 import {
+  type AddLongSentenceInput,
   type AddResult,
+  type AddWordFavoriteInput,
   type ArticleDetail,
   type ArticleSummary,
+  type FavoriteAddResult,
+  type FillLongSentenceInput,
   type ImportArticleInput,
   type ImportSuiteInput,
   type ImportSuiteResult,
   type LibraryGroup,
+  type LongSentenceFavorite,
   type ReaderApi,
+  type ReviewEventInput,
+  type ReviewEventResult,
   type Section,
   type UpdateArticleInput,
+  type WordFavorite,
   UNCATEGORIZED,
 } from "./types";
 import {
@@ -16,6 +24,12 @@ import {
   countWords,
   parsePastedText,
 } from "./text";
+import { normalizeCollectionKey } from "../collection/normalize";
+import {
+  initialSchedule,
+  isValidLocalDate,
+  nextSchedule,
+} from "../review/schedule";
 
 /**
  * 浏览器预览/测试用的内存实现，数据写入 localStorage。
@@ -55,13 +69,69 @@ interface MockMembership {
   addedAt: string;
 }
 
+interface MockWordFavorite {
+  id: number;
+  word: string;
+  normalizedWord: string;
+  sentence: string;
+  normalizedSentence: string;
+  articleId: number | null;
+  articleTitle: string;
+  paragraphStart: number;
+  paragraphEnd: number;
+  contextualMeaning: string;
+  commonMeaning: string;
+  phonetic: string | null;
+  partOfSpeech: string | null;
+  forms: string[];
+  createdAt: string;
+}
+
+interface MockLongSentence {
+  id: number;
+  sourceText: string;
+  sourceKey: string;
+  translation: string | null;
+  analysis: string | null;
+  articleId: number | null;
+  articleTitle: string;
+  paragraphStart: number;
+  paragraphEnd: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface MockSchedule {
+  favoriteId: number;
+  stage: number;
+  dueDate: string;
+  lastReviewedOn: string | null;
+}
+
+interface MockReviewEvent {
+  id: number;
+  favoriteId: number;
+  roundId: string;
+  revealId: string;
+  rating: "remembered" | "forgotten";
+  localDate: string;
+  createdAt: string;
+}
+
 interface MockState {
   nextArticleId: number;
   nextSuiteId: number;
+  nextWordFavoriteId: number;
+  nextLongSentenceId: number;
+  nextReviewEventId: number;
   sections: Array<{ id: string; name: string; sortOrder: number; createdAt: string }>;
   suites: MockSuite[];
   articles: MockArticle[];
   memberships: MockMembership[];
+  wordFavorites: MockWordFavorite[];
+  longSentences: MockLongSentence[];
+  schedules: MockSchedule[];
+  reviewEvents: MockReviewEvent[];
 }
 
 const STORAGE_KEY = "yuejian.browser.db";
@@ -86,12 +156,19 @@ function defaultState(): MockState {
   return {
     nextArticleId: 1,
     nextSuiteId: 1,
+    nextWordFavoriteId: 1,
+    nextLongSentenceId: 1,
+    nextReviewEventId: 1,
     sections: [
       { id: "default-section", name: "我的阅读", sortOrder: 10, createdAt: now },
     ],
     suites: [],
     articles: [],
     memberships: [],
+    wordFavorites: [],
+    longSentences: [],
+    schedules: [],
+    reviewEvents: [],
   };
 }
 
@@ -163,6 +240,18 @@ export function createMockApi(storage: StorageLike = createMemoryStorage()): Rea
   if (!state.sections.length) state.sections.push(defaultState().sections[0]);
   if (!Array.isArray(state.suites)) state.suites = [];
   if (typeof state.nextSuiteId !== "number") state.nextSuiteId = 1;
+  state.wordFavorites = Array.isArray(state.wordFavorites) ? state.wordFavorites : [];
+  state.longSentences = Array.isArray(state.longSentences) ? state.longSentences : [];
+  state.schedules = Array.isArray(state.schedules) ? state.schedules : [];
+  state.reviewEvents = Array.isArray(state.reviewEvents) ? state.reviewEvents : [];
+  const nextId = (rows: Array<{ id: number }>, stored: unknown) =>
+    Math.max(
+      typeof stored === "number" ? stored : 1,
+      rows.reduce((max, row) => Math.max(max, row.id), 0) + 1,
+    );
+  state.nextWordFavoriteId = nextId(state.wordFavorites, state.nextWordFavoriteId);
+  state.nextLongSentenceId = nextId(state.longSentences, state.nextLongSentenceId);
+  state.nextReviewEventId = nextId(state.reviewEvents, state.nextReviewEventId);
   for (const article of state.articles) {
     const legacy = article as Partial<MockArticle>;
     article.suiteId = legacy.suiteId ?? null;
@@ -179,6 +268,65 @@ export function createMockApi(storage: StorageLike = createMemoryStorage()): Rea
     const article = state.articles.find((a) => a.id === id);
     if (!article) throw new Error("找不到这篇文章");
     return article;
+  }
+
+  function wordView(favorite: MockWordFavorite, today: string): WordFavorite {
+    const schedule = state.schedules.find(
+      (item) => item.favoriteId === favorite.id,
+    );
+    const events = state.reviewEvents.filter(
+      (event) => event.favoriteId === favorite.id,
+    );
+    return {
+      ...favorite,
+      stage: schedule?.stage ?? null,
+      dueDate: schedule?.dueDate ?? null,
+      forgottenCount: events.filter((event) => event.rating === "forgotten")
+        .length,
+      forgottenToday: events.some(
+        (event) => event.rating === "forgotten" && event.localDate === today,
+      ),
+    };
+  }
+
+  function longSentenceView(item: MockLongSentence): LongSentenceFavorite {
+    return {
+      id: item.id,
+      sourceText: item.sourceText,
+      translation: item.translation,
+      analysis: item.analysis,
+      articleId: item.articleId,
+      articleTitle: item.articleTitle,
+      paragraphStart: item.paragraphStart,
+      paragraphEnd: item.paragraphEnd,
+      createdAt: item.createdAt,
+      updatedAt: item.updatedAt,
+    };
+  }
+
+  function normalizeAnalysis(raw: string | null | undefined): string | null {
+    const trimmed = raw?.trim();
+    if (!trimmed) return null;
+    let value: unknown;
+    try {
+      value = JSON.parse(trimmed);
+    } catch {
+      throw new Error("解析内容格式不合法");
+    }
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      throw new Error("解析内容格式不合法");
+    }
+    return JSON.stringify(value);
+  }
+
+  function latestTodayEvent(
+    favoriteId: number,
+    today: string,
+  ): MockReviewEvent | null {
+    return state.reviewEvents.reduce<MockReviewEvent | null>((latest, event) => {
+      if (event.favoriteId !== favoriteId || event.localDate !== today) return latest;
+      return !latest || event.id > latest.id ? event : latest;
+    }, null);
   }
 
   return {
@@ -473,6 +621,234 @@ export function createMockApi(storage: StorageLike = createMemoryStorage()): Rea
       return state.memberships
         .filter((m) => m.articleId === articleId)
         .map((m) => sectionResult(state, m.sectionId));
+    },
+
+    async listWordFavorites(today: string) {
+      if (!isValidLocalDate(today)) throw new Error("日期必须使用 YYYY-MM-DD 格式");
+      return [...state.wordFavorites]
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id - a.id)
+        .map((favorite) => wordView(favorite, today));
+    },
+
+    async addWordFavorite(input: AddWordFavoriteInput) {
+      const word = input.word.trim();
+      const sentence = input.sentence.trim();
+      if (!word) throw new Error("词语不能为空");
+      if (!sentence) throw new Error("原句不能为空");
+      if (!isValidLocalDate(input.today)) {
+        throw new Error("收藏日期必须使用 YYYY-MM-DD 格式");
+      }
+      if (input.paragraphStart < 0 || input.paragraphEnd < input.paragraphStart) {
+        throw new Error("段落范围不合法");
+      }
+      const article = articleById(input.articleId);
+      const normalizedWord = normalizeCollectionKey(word);
+      const normalizedSentence = normalizeCollectionKey(sentence);
+      const existing = state.wordFavorites.find(
+        (favorite) =>
+          favorite.normalizedWord === normalizedWord &&
+          favorite.normalizedSentence === normalizedSentence,
+      );
+      if (existing) {
+        const favorite = wordView(existing, input.today);
+        return { created: false, favorite } satisfies FavoriteAddResult<WordFavorite>;
+      }
+      const favorite: MockWordFavorite = {
+        id: state.nextWordFavoriteId++,
+        word,
+        normalizedWord,
+        sentence,
+        normalizedSentence,
+        articleId: article.id,
+        articleTitle: article.title,
+        paragraphStart: input.paragraphStart,
+        paragraphEnd: input.paragraphEnd,
+        contextualMeaning: input.contextualMeaning.trim(),
+        commonMeaning: input.commonMeaning.trim(),
+        phonetic: input.phonetic?.trim() || null,
+        partOfSpeech: input.partOfSpeech?.trim() || null,
+        forms: input.forms ?? [],
+        createdAt: new Date().toISOString(),
+      };
+      state.wordFavorites.push(favorite);
+      state.schedules.push({
+        favoriteId: favorite.id,
+        ...initialSchedule(input.today),
+        lastReviewedOn: null,
+      });
+      persist();
+      const view = wordView(favorite, input.today);
+      return { created: true, favorite: view } satisfies FavoriteAddResult<WordFavorite>;
+    },
+
+    async removeWordFavorite(id: number) {
+      const before = state.wordFavorites.length;
+      state.wordFavorites = state.wordFavorites.filter(
+        (favorite) => favorite.id !== id,
+      );
+      state.schedules = state.schedules.filter(
+        (schedule) => schedule.favoriteId !== id,
+      );
+      state.reviewEvents = state.reviewEvents.filter(
+        (event) => event.favoriteId !== id,
+      );
+      persist();
+      return state.wordFavorites.length < before;
+    },
+
+    async listLongSentenceFavorites() {
+      return [...state.longSentences]
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id - a.id)
+        .map(longSentenceView);
+    },
+
+    async addLongSentenceFavorite(input: AddLongSentenceInput) {
+      const sourceText = input.sourceText.trim();
+      if (!sourceText) throw new Error("原文不能为空");
+      if (input.paragraphStart < 0 || input.paragraphEnd < input.paragraphStart) {
+        throw new Error("段落范围不合法");
+      }
+      const article = articleById(input.articleId);
+      const normalized = normalizeCollectionKey(sourceText);
+      const sourceKey = `${input.articleId}:${input.paragraphStart}:${input.paragraphEnd}:${normalized}`;
+      const existing = state.longSentences.find(
+        (item) => item.sourceKey === sourceKey,
+      );
+      if (existing) {
+        const favorite = longSentenceView(existing);
+        return {
+          created: false,
+          favorite,
+        } satisfies FavoriteAddResult<LongSentenceFavorite>;
+      }
+      const now = new Date().toISOString();
+      const item: MockLongSentence = {
+        id: state.nextLongSentenceId++,
+        sourceText,
+        sourceKey,
+        translation: input.translation?.trim() || null,
+        analysis: normalizeAnalysis(input.analysis),
+        articleId: article.id,
+        articleTitle: article.title,
+        paragraphStart: input.paragraphStart,
+        paragraphEnd: input.paragraphEnd,
+        createdAt: now,
+        updatedAt: now,
+      };
+      state.longSentences.push(item);
+      persist();
+      return {
+        created: true,
+        favorite: longSentenceView(item),
+      } satisfies FavoriteAddResult<LongSentenceFavorite>;
+    },
+
+    async fillLongSentenceFavorite(input: FillLongSentenceInput) {
+      const item = state.longSentences.find((row) => row.id === input.id);
+      if (!item) throw new Error("找不到这条长难句收藏");
+      const translation = item.translation ?? (input.translation?.trim() || null);
+      const analysis = item.analysis ??
+        (input.analysis ? normalizeAnalysis(input.analysis) : null);
+      if (!translation && !analysis) throw new Error("没有可补全的译文或解析");
+      item.translation = translation;
+      item.analysis = analysis;
+      item.updatedAt = new Date().toISOString();
+      persist();
+      return longSentenceView(item);
+    },
+
+    async removeLongSentenceFavorite(id: number) {
+      const before = state.longSentences.length;
+      state.longSentences = state.longSentences.filter((item) => item.id !== id);
+      persist();
+      return state.longSentences.length < before;
+    },
+
+    async listDueWordFavorites(today: string) {
+      if (!isValidLocalDate(today)) throw new Error("日期必须使用 YYYY-MM-DD 格式");
+      const scheduleOf = (favoriteId: number) =>
+        state.schedules.find((schedule) => schedule.favoriteId === favoriteId);
+      const due = state.wordFavorites.filter((favorite) => {
+        const schedule = scheduleOf(favorite.id);
+        if (!schedule) return false;
+        if (schedule.dueDate <= today) return true;
+        return latestTodayEvent(favorite.id, today)?.rating === "forgotten";
+      });
+      due.sort((a, b) => {
+        const dueA = scheduleOf(a.id)?.dueDate ?? "";
+        const dueB = scheduleOf(b.id)?.dueDate ?? "";
+        return (
+          dueA.localeCompare(dueB) ||
+          a.createdAt.localeCompare(b.createdAt) ||
+          a.id - b.id
+        );
+      });
+      return due.map((favorite) => wordView(favorite, today));
+    },
+
+    async recordReviewEvent(input: ReviewEventInput) {
+      if (input.rating !== "remembered" && input.rating !== "forgotten") {
+        throw new Error("评分只能是记得或忘记");
+      }
+      if (!input.roundId.trim() || !input.revealId.trim()) {
+        throw new Error("缺少本轮或揭晓标识");
+      }
+      if (!isValidLocalDate(input.localDate)) {
+        throw new Error("复习日期必须使用 YYYY-MM-DD 格式");
+      }
+      const scheduleOf = (favoriteId: number) =>
+        state.schedules.find((schedule) => schedule.favoriteId === favoriteId);
+      const duplicate = state.reviewEvents.find(
+        (event) => event.revealId === input.revealId,
+      );
+      if (duplicate) {
+        const schedule = scheduleOf(duplicate.favoriteId);
+        if (!schedule) throw new Error("找不到这张词卡的排程");
+        return {
+          favoriteId: duplicate.favoriteId,
+          rating: duplicate.rating,
+          stage: schedule.stage,
+          dueDate: schedule.dueDate,
+          recorded: false,
+        } satisfies ReviewEventResult;
+      }
+      if (!state.wordFavorites.some((favorite) => favorite.id === input.favoriteId)) {
+        throw new Error("找不到这条词语收藏");
+      }
+      const schedule = scheduleOf(input.favoriteId);
+      if (!schedule) throw new Error("找不到这张词卡的排程");
+      state.reviewEvents.push({
+        id: state.nextReviewEventId++,
+        favoriteId: input.favoriteId,
+        roundId: input.roundId.trim(),
+        revealId: input.revealId.trim(),
+        rating: input.rating,
+        localDate: input.localDate,
+        createdAt: new Date().toISOString(),
+      });
+      const forgottenToday = state.reviewEvents.some(
+        (event) =>
+          event.favoriteId === input.favoriteId &&
+          event.rating === "forgotten" &&
+          event.localDate === input.localDate,
+      );
+      const next = nextSchedule({
+        stage: schedule.stage,
+        rating: input.rating,
+        forgottenToday,
+        today: input.localDate,
+      });
+      schedule.stage = next.stage;
+      schedule.dueDate = next.dueDate;
+      schedule.lastReviewedOn = input.localDate;
+      persist();
+      return {
+        favoriteId: input.favoriteId,
+        rating: input.rating,
+        stage: next.stage,
+        dueDate: next.dueDate,
+        recorded: true,
+      } satisfies ReviewEventResult;
     },
   };
 }

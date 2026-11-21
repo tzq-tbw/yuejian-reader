@@ -1,8 +1,11 @@
 mod db;
+mod review;
 
 use db::{
-    AddResult, ArticleDetail, ArticleSummary, ImportSuiteInput, ImportSuiteResult, LibraryGroup,
-    PasteArticleInput, Section, UpdateArticleInput,
+    AddLongSentenceInput, AddWordFavoriteInput, AddResult, ArticleDetail, ArticleSummary,
+    FavoriteAddResult, FillLongSentenceInput, ImportSuiteInput, ImportSuiteResult,
+    LibraryGroup, LongSentenceFavorite, PasteArticleInput, ReviewEventInput, ReviewEventResult,
+    Section, UpdateArticleInput, WordFavorite,
 };
 use std::sync::Mutex;
 use tauri::{Manager, State};
@@ -209,6 +212,71 @@ fn get_article_sections(
     with_conn(&state, |conn| db::get_article_sections(conn, article_id))
 }
 
+#[tauri::command]
+fn list_word_favorites(
+    state: State<'_, DbState>,
+    today: String,
+) -> Result<Vec<WordFavorite>, String> {
+    with_conn(&state, |conn| db::list_word_favorites(conn, &today))
+}
+
+#[tauri::command]
+fn add_word_favorite(
+    state: State<'_, DbState>,
+    input: AddWordFavoriteInput,
+) -> Result<FavoriteAddResult<WordFavorite>, String> {
+    with_conn(&state, |conn| db::add_word_favorite(conn, &input))
+}
+
+#[tauri::command]
+fn remove_word_favorite(state: State<'_, DbState>, id: i64) -> Result<bool, String> {
+    with_conn(&state, |conn| db::remove_word_favorite(conn, id))
+}
+
+#[tauri::command]
+fn list_long_sentence_favorites(
+    state: State<'_, DbState>,
+) -> Result<Vec<LongSentenceFavorite>, String> {
+    with_conn(&state, |conn| db::list_long_sentence_favorites(conn))
+}
+
+#[tauri::command]
+fn add_long_sentence_favorite(
+    state: State<'_, DbState>,
+    input: AddLongSentenceInput,
+) -> Result<FavoriteAddResult<LongSentenceFavorite>, String> {
+    with_conn(&state, |conn| db::add_long_sentence_favorite(conn, &input))
+}
+
+#[tauri::command]
+fn fill_long_sentence_favorite(
+    state: State<'_, DbState>,
+    input: FillLongSentenceInput,
+) -> Result<LongSentenceFavorite, String> {
+    with_conn(&state, |conn| db::fill_long_sentence_favorite(conn, &input))
+}
+
+#[tauri::command]
+fn remove_long_sentence_favorite(state: State<'_, DbState>, id: i64) -> Result<bool, String> {
+    with_conn(&state, |conn| db::remove_long_sentence_favorite(conn, id))
+}
+
+#[tauri::command]
+fn list_due_word_favorites(
+    state: State<'_, DbState>,
+    today: String,
+) -> Result<Vec<WordFavorite>, String> {
+    with_conn(&state, |conn| db::list_due_word_favorites(conn, &today))
+}
+
+#[tauri::command]
+fn record_review_event(
+    state: State<'_, DbState>,
+    input: ReviewEventInput,
+) -> Result<ReviewEventResult, String> {
+    with_conn(&state, |conn| db::record_review_event(conn, &input))
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -233,6 +301,15 @@ pub fn run() {
             add_articles_to_section,
             remove_article_from_section,
             get_article_sections,
+            list_word_favorites,
+            add_word_favorite,
+            remove_word_favorite,
+            list_long_sentence_favorites,
+            add_long_sentence_favorite,
+            fill_long_sentence_favorite,
+            remove_long_sentence_favorite,
+            list_due_word_favorites,
+            record_review_event,
             model_chat,
         ])
         .run(tauri::generate_context!())

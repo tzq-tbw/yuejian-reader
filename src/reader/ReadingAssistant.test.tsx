@@ -149,11 +149,23 @@ function applyRange(
 }
 
 function selectInParagraph(index: number, start: number, end: number): HTMLElement {
-  const paragraph = document.querySelector<HTMLElement>(`p[data-i="${index}"]`)!;
-  const startPoint = findTextNode(paragraph, start);
-  const endPoint = findTextNode(paragraph, end);
-  applyRange(startPoint.node, startPoint.offset, endPoint.node, endPoint.offset);
-  fireEvent.mouseUp(paragraph);
+  const apply = () => {
+    const paragraph = document.querySelector<HTMLElement>(`p[data-i="${index}"]`)!;
+    const startPoint = findTextNode(paragraph, start);
+    const endPoint = findTextNode(paragraph, end);
+    applyRange(startPoint.node, startPoint.offset, endPoint.node, endPoint.offset);
+    fireEvent.mouseUp(paragraph);
+    return paragraph;
+  };
+  // 先清掉上一次的选区工具条；若首次选区恰好撞上 React 提交导致 Range 失效，
+  // 等当前任务结束后用新 DOM 节点重试一次。
+  const initial = document.querySelector<HTMLElement>(`p[data-i="${index}"]`)!;
+  window.getSelection()?.removeAllRanges();
+  fireEvent.mouseUp(initial);
+  const paragraph = apply();
+  if (!document.querySelector('[role="toolbar"]')) {
+    window.setTimeout(apply, 0);
+  }
   return paragraph;
 }
 
@@ -163,16 +175,25 @@ function selectAcrossParagraphs(
   endIndex: number,
   endOffset: number,
 ): void {
-  const startParagraph = document.querySelector<HTMLElement>(
-    `p[data-i="${startIndex}"]`,
-  )!;
-  const endParagraph = document.querySelector<HTMLElement>(
-    `p[data-i="${endIndex}"]`,
-  )!;
-  const startPoint = findTextNode(startParagraph, startOffset);
-  const endPoint = findTextNode(endParagraph, endOffset);
-  applyRange(startPoint.node, startPoint.offset, endPoint.node, endPoint.offset);
-  fireEvent.mouseUp(endParagraph);
+  const apply = () => {
+    const startParagraph = document.querySelector<HTMLElement>(
+      `p[data-i="${startIndex}"]`,
+    )!;
+    const endParagraph = document.querySelector<HTMLElement>(
+      `p[data-i="${endIndex}"]`,
+    )!;
+    const startPoint = findTextNode(startParagraph, startOffset);
+    const endPoint = findTextNode(endParagraph, endOffset);
+    applyRange(startPoint.node, startPoint.offset, endPoint.node, endPoint.offset);
+    fireEvent.mouseUp(endParagraph);
+  };
+  const initial = document.querySelector<HTMLElement>(`p[data-i="${startIndex}"]`)!;
+  window.getSelection()?.removeAllRanges();
+  fireEvent.mouseUp(initial);
+  apply();
+  if (!document.querySelector('[role="toolbar"]')) {
+    window.setTimeout(apply, 0);
+  }
 }
 
 function paragraphTexts(): string[] {
