@@ -89,6 +89,7 @@ export function SelectionToolbar({
     <div
       ref={toolbarRef}
       className="bubble selectionToolbar"
+      data-theme="high-contrast"
       role="toolbar"
       aria-label="选区操作"
       style={{

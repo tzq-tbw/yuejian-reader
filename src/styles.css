@@ -773,6 +773,23 @@ footer span { margin-left: auto; }
   font: 12px/1.4 "Segoe UI", "Microsoft YaHei", sans-serif;
 }
 .bubble button:hover { background: #edf2fa; }
+.selectionToolbar[data-theme="high-contrast"] {
+  background: #153f73;
+  border-color: #0d2d55;
+  box-shadow: 0 8px 24px #0d2d554d;
+  color: white;
+}
+.selectionToolbar[data-theme="high-contrast"] button {
+  background: transparent;
+  color: white;
+  font-weight: 600;
+}
+.selectionToolbar[data-theme="high-contrast"] button:hover {
+  background: #2c65be;
+}
+.selectionToolbar[data-theme="high-contrast"] button:focus-visible {
+  outline-color: white;
+}
 .parhead button {
   border: 0;
   background: transparent;

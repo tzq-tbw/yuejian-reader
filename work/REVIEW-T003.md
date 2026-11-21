@@ -135,3 +135,38 @@ Inspector 将 pending、error 和 result 独立渲染，旧结果不会因 pendi
 ### 新问题检查 —— 未发现本轮修复引入的新问题
 
 四项修复没有改变请求目标、结果替换或渲染分支的既有契约；全套测试与构建通过。另有一处与本轮修复无关的既有边界供后续参考：`retryParagraph` 启动时只覆盖 `result/error` 并保留 `previous.pending`（`src/language/useReadingAssistant.ts:393-397`），同时递增序号使另一在途请求失效（`:375`、`:401-409`）。因此在“词卡请求 pending、旧全文结果仍显示”时点击“重试本段”，词卡请求被静默丢弃，但“正在生成词卡…”会一直保留到下一次请求。该入口在 R2 之前就存在（旧结果在 pending 期间一直显示，错误行一直有重试按钮），不属于建议 1-4 的回归，建议后续单独处理。
+
+## R3 反审记录
+
+反审日期：2026-11-21。只读核验 Kimi 的 T-R3a/T-R3b 两项修改，未修改产品代码。独立执行 `npm test`（12 个文件通过、2 个跳过；75 项通过、3 项跳过）、`npx vitest run src/language/vocabulary.test.ts`（6 项全部通过）和 `npm run build`（`tsc --noEmit` + Vite 构建通过），与 `work/FIX-T003-R3.md:19-20` 的验证结果一致。
+
+### 1. 词表接口兼容性 —— 通过（一处导出面变化）
+
+- `VocabularyList`、`VocabularyMatch`、`TextToken` 的字段未变（`src/language/vocabulary.ts:5-21`）；`candidates` 逻辑未变（`src/language/vocabulary.ts:23-45`）；`vocabularyMatches`、`tokenizeWithVocabulary` 的参数、默认值和返回类型未变（`src/language/vocabulary.ts:77-108`）。`DEFAULT_VOCABULARY_LISTS` 仍是 `readonly VocabularyList[]`，只是内容扩为三表（`src/language/vocabulary.ts:70-75`）。正文消费方只依赖 `tokenizeWithVocabulary`（`src/reader/ReaderView.tsx:13`、`src/reader/ReaderView.tsx:222`），无需改动。
+- 唯一 API 表面变化是删除旧导出 `CET4_SAMPLE_LIST`（及内部样例数组），新增 `CET4_LIST`/`CET6_LIST`/`POSTGRADUATE_LIST`，标签从“四级词汇”改为“四级高频”。全库检索显示旧导出仅被 `vocabulary.test.ts` 引用，没有生产调用点，所以不构成仓库内兼容性破坏；若把模块导出视为对外契约，这是一次有意删除/重命名，交付说明已写明。
+- 新增 `cet6`/`ky` 两个 id 会进入 `<mark className="vocabMark ...">` 和标题（`src/reader/ReaderView.tsx:226-231`），现有 CSS 没有按 id 限定的规则，不会因新 id 产生意外样式。
+
+### 2. 测试覆盖 —— 通过（6 用例覆盖目标，余一处小缺口）
+
+- `src/language/vocabulary.test.ts` 确有 6 个用例（`:15`、`:23`、`:31`、`:39`、`:58`、`:69`）：三表各 1600 词、无重复、纯小写字母；默认三表同时启用；`address` 的屈折匹配；重叠词在 `vocabularyMatches` 和 `tokenizeWithVocabulary` 中返回 `cet4/cet6/ky` 三个 id 与三个中文标签，并验证 token 拼接还原原文；任意子集独立开关及空列表；未命中返回空。三表、重叠、开关均有直接断言。
+- 小缺口：独立开关用例只用了三表共同词 `address`，没有用只属于单表的词锁定“单一类别”行为。词表中存在 `exactly`（仅四级）、`environmental`（仅六级）、`labor`（仅考研）等样例，补一条单表命中用例即可覆盖。属建议补强，不影响本轮验收。
+
+### 3. 词表数据质量 —— 通过（口径注释有两处不精确）
+
+- 我从 ECDICT 固定提交 `39cfb9672c0906b63569e0453c2e6abfb9ab182a` 下载完整 `ecdict.csv`（66,009,548 字节、770,611 行），按文件头描述复现筛选：对 `cet4`/`cet6`/`ky` 标签（候选分别 3,837、5,396、4,801 行），词形统一小写后仅保留 `[a-z]+`，排除 `frq=0`，按 `(frq, bnc, word)` 升序取前 1600。三份词表与复现结果逐项一致（各 1600/1600 全部相同），来源、版本和筛选可复现，不是手工拼凑。
+- 高频性：三表末位词的当代语料库频率排名分别为 2907（四级 `elderly`）、3123（六级 `eager`）、2947（考研 `shelf`），表中前部为 `state`/`might`/`part`/`system` 等常见高频词，整体在语料库前约 3100 名内，符合“考试高频词表”定位。
+- 完整性：三表各 1600 词、无重复、全部 `^[a-z]+$`；抽查未见乱码、中文、空格、标点、空项或跨表复制错误。`ad`（四级）和 `tv`（考研）是 ECDICT 收录的缩写，`african`/`christian`/`latin`/`god` 等是源库大写专名统一小写后的结果；它们都是合法的 ECDICT 词条，不是损坏数据，但若产品要求只收普通词汇，这两类需要产品另行决定是否剔除。
+- 口径注释不精确：文件头只写“按 frq 升序取前 1600”，实际还排除了 `frq=0` 并统一了小写；按字面把 `frq=0` 纳入排序会得到不同列表。建议把头注补成“先排除 frq=0，并将源词条统一小写，再按 (frq, bnc, word) 升序取前 1600”。
+- 分布观察：三表并集 1833 词，其中 1298 词同时命中三表、371 词命中两表、仅 164 词单表。默认三表开启时大多数标记会显示三个类别；这与“重叠词保留全部命中类别”的验收一致，但“六级/考研”标签的区分度较低。另注意当前 `<mark>` 的类别只进入 `className` 和 `title`，`.vocabMark` 仍只有统一样式（`src/styles.css:761-762`）；若任务中的“按词表归属分类标色”要求视觉颜色区分，这部分尚未实现。
+
+### 4. 工具条高对比配色范围 —— 通过
+
+- 与配色相关的代码只有 `src/reader/SelectionToolbar.tsx:92` 新增 `data-theme="high-contrast"`，以及 `src/styles.css:776-792` 的 17 行新规则。`git diff HEAD` 未显示其他组件或全局样式改动；新增选择器全部以 `.selectionToolbar[data-theme="high-contrast"]` 限定，不会影响弹窗、其他气泡或词表标记。
+- 对比度实测：白字/深蓝底 `#153f73` 约 10.55:1（WCAG AAA），悬停白字/品牌蓝 `#2c65be` 约 5.66:1（WCAG AA），焦点轮廓为白色；Lucide 图标使用 `currentColor`，随文字变白。深蓝边框与背景对比约 1.31:1，仅作装饰，不承担文字可读性。构建通过，未见 CSS 语法或选择器优先级问题。
+- 未在真实 WebView2 窗口做肉眼验收；该项仍属人工验收，不在本轮代码核验结论内。
+
+### 结论
+
+两项修改均达到 R3 目标，未发现阻塞问题。词表函数与类型签名确实未变，6 个用例覆盖三表/重叠/开关；数据可由 ECDICT 固定提交精确复现；配色只改动了指定组件的两处文件。待处理的都是低优先级项：补一个单表命中测试用例、修正词表头注的 `frq>0`/小写口径、确认是否需要按类别做视觉标色，以及同步仍写着“内置四级样例/完整词表待后续”的 `work/CHANGES-T003.md:68`、`:165`。核验用的 ECDICT 临时文件已清理，未进入仓库。
+
+验证结果：`npm test` 75 通过、3 跳过（共 78 项）；词汇测试 6/6 通过；`npm run build` 通过。
