@@ -1,6 +1,6 @@
 # 英语精读 · 阅间
 
-Windows 桌面精读应用（阶段 1：本机阅读骨架）。React + TypeScript + Tauri 2 + SQLite，视觉基准沿用 `reader-preview/` 的已确认样品。当前阶段支持粘贴建篇、资料库、阅读分区、正文编辑保存和双侧栏收起。
+Windows 桌面精读应用（阶段 3：精读工作台）。React + TypeScript + Tauri 2 + SQLite，视觉基准沿用 `reader-preview/` 的已确认样品。当前支持粘贴建篇、PDF 真题导入、资料库、阅读分区、正文编辑保存、双侧栏收起，以及四级词表标色、划词工具条、词卡、段落/全文翻译和句法解析。
 
 ## 桌面版启动
 
@@ -27,6 +27,13 @@ npm run tauri:build
 
 安装包输出在 `src-tauri/target/release/bundle/nsis/`。阶段 1 只在开发窗口验证；安装包构建属于阶段 5。
 
+## 精读模型接入（阶段 3）
+
+- 默认经本机 Magpie 代理访问 DeepSeek：`http://127.0.0.1:3425/v1`，模型 `auto/deepseek-v4.1-flash`（OpenAI 兼容格式）；桌面端模型请求由 Rust `model_chat` 命令发出，避开 WebView 的 CORS 限制。
+- 可替换配置：构建时设置 `VITE_LANGUAGE_BASE_URL`、`VITE_LANGUAGE_MODEL`。API key 仅保留构造参数占位，不提供前端环境变量入口；阶段 3 未接系统凭据存储。
+- 浏览器预览的 `fetch` 通道受代理 CORS 限制，模型功能以桌面版为准；断网或代理未启动时只影响侧栏结果，不阻断本地编辑。
+- 真实联调（需 Magpie 已启动）：`YUEJIAN_REAL_MODEL=1 npx vitest run src/language/realModel.test.ts --reporter=verbose`。Rust 通道可运行 `cargo test model_chat_round_trip -- --ignored`。
+
 ## 数据与测试
 
 - 正式数据由 Rust 命令写入 SQLite，数据库位于 Tauri 应用数据目录（Windows 通常为 `%APPDATA%\com.yuejian.reader\reader.db`）。
@@ -39,6 +46,8 @@ npm run tauri:build
 | 目录 | 职责 |
 |---|---|
 | `src/library` | 资料库、粘贴建篇、主题分类、文章编辑入口 |
+| `src/import` | PDF.js 文字层提取、四级阅读拆篇、导入预览与指纹去重 |
+| `src/language` | 模型客户端、提示词与响应解析、选区请求目标、四级词表样例、精读侧栏会话 |
 | `src/reading-list` | 分区列表、重命名、文章加入/移除入口 |
 | `src/reader` | 正文渲染、编辑保存、精读侧栏 |
 | `src/data` | 类型、文本分段、Tauri 命令封装、浏览器预览实现 |

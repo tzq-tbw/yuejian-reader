@@ -6,6 +6,18 @@ import { createMemoryStorage, createMockApi, type StorageLike } from "./data/moc
 
 const TITLE = "The City at Walking Speed";
 
+function paragraphTexts(): string[] {
+  return Array.from(document.querySelectorAll<HTMLElement>("p[data-i]")).map(
+    (paragraph) => paragraph.textContent ?? "",
+  );
+}
+
+async function findParagraph(text: string): Promise<void> {
+  await waitFor(() => {
+    expect(paragraphTexts()).toContain(text);
+  });
+}
+
 beforeEach(() => {
   window.localStorage.clear();
 });
@@ -48,7 +60,7 @@ describe("本机阅读骨架", () => {
     await waitFor(() => {
       expect(document.querySelectorAll("p[lang='en']").length).toBe(3);
     });
-    expect(screen.getByText("The second paragraph is here.")).toBeInTheDocument();
+    expect(paragraphTexts()).toContain("The second paragraph is here.");
     expect(document.querySelector(".sheet .meta")).not.toBeInTheDocument();
     const inspector = screen.getByLabelText("精读侧栏");
     expect(within(inspector).getAllByRole("button")).toHaveLength(1);
@@ -62,13 +74,11 @@ describe("本机阅读骨架", () => {
       },
     });
     await user.click(screen.getByRole("button", { name: "保存" }));
-    expect(
-      await screen.findByText("The second paragraph was edited."),
-    ).toBeInTheDocument();
+    await findParagraph("The second paragraph was edited.");
 
     await user.click(screen.getByRole("button", { name: "收起文章列表" }));
     expect(screen.queryByLabelText("阅读列表")).not.toBeInTheDocument();
-    expect(screen.getByText("The second paragraph was edited.")).toBeInTheDocument();
+    expect(paragraphTexts()).toContain("The second paragraph was edited.");
     await user.click(screen.getByRole("button", { name: "展开文章列表" }));
     expect(await screen.findByLabelText("阅读列表")).toBeInTheDocument();
 
@@ -79,9 +89,7 @@ describe("本机阅读骨架", () => {
 
     view.unmount();
     render(<App api={createMockApi(storage)} />);
-    expect(
-      await screen.findByText("The second paragraph was edited."),
-    ).toBeInTheDocument();
+    await findParagraph("The second paragraph was edited.");
     expect((await screen.findAllByText("我的阅读")).length).toBeGreaterThan(0);
   });
 
@@ -95,7 +103,7 @@ describe("本机阅读骨架", () => {
     const user = userEvent.setup();
     render(<App api={api} />);
     await screen.findAllByText("我的阅读");
-    await screen.findByText("Second paragraph.");
+    await findParagraph("Second paragraph.");
 
     await user.click(screen.getByRole("button", { name: "添加分区或文章" }));
     await user.click(screen.getByRole("menuitem", { name: "新建分区" }));
@@ -205,7 +213,7 @@ describe("本机阅读骨架", () => {
     const user = userEvent.setup();
     render(<App api={api} />);
     await screen.findAllByText("我的阅读");
-    await screen.findByText("Second paragraph.");
+    await findParagraph("Second paragraph.");
 
     await user.click(screen.getByRole("button", { name: "添加分区或文章" }));
     await user.click(screen.getByRole("menuitem", { name: "新建分区" }));
@@ -257,7 +265,7 @@ describe("本机阅读骨架", () => {
     const user = userEvent.setup();
     render(<App api={api} />);
     await screen.findAllByText("我的阅读");
-    await screen.findByText("Second paragraph.");
+    await findParagraph("Second paragraph.");
 
     for (const sectionName of ["分区 A", "分区 B"]) {
       await user.click(screen.getByRole("button", { name: "添加分区或文章" }));

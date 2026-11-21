@@ -8,6 +8,9 @@ import type {
   ReaderApi,
   Section,
 } from "./data/types";
+import type { LanguageService } from "./language/types";
+import { useReadingAssistant } from "./language/useReadingAssistant";
+import type { CapturedSelection } from "./reader/selection";
 import { getApi, isTauriRuntime } from "./data";
 import { parsePastedText, paragraphsToText } from "./data/text";
 import { errorMessage } from "./utils/error";
@@ -71,7 +74,13 @@ async function fetchArticle(api: ReaderApi, articleId: number) {
   return { article, memberships };
 }
 
-export function App({ api = getApi() }: { api?: ReaderApi }) {
+export function App({
+  api = getApi(),
+  language,
+}: {
+  api?: ReaderApi;
+  language?: LanguageService;
+}) {
   const [sections, setSections] = useState<Section[]>([]);
   const [articlesBySection, setArticlesBySection] = useState<
     Record<string, ArticleSummary[]>
@@ -102,6 +111,12 @@ export function App({ api = getApi() }: { api?: ReaderApi }) {
   const [pasteDialog, setPasteDialog] = useState<{
     returnFocus: HTMLElement | null;
   } | null>(null);
+  const assistant = useReadingAssistant(currentArticle, language);
+  const openAssistantSide = () => setSideOpen(true);
+  const askWord = (selection: CapturedSelection) => {
+    openAssistantSide();
+    assistant.askWord(selection);
+  };
 
   const ui = useMemo(readUi, []);
   const [listOpen, setListOpen] = useState(
@@ -560,6 +575,23 @@ export function App({ api = getApi() }: { api?: ReaderApi }) {
                 }
                 onOpenPaste={(opener) => setPasteDialog({ returnFocus: opener })}
                 onGoLibrary={() => void navigate("library")}
+                onAskWord={askWord}
+                onTranslateSelection={(selection) => {
+                  openAssistantSide();
+                  assistant.translateSelection(selection);
+                }}
+                onAnalyzeSelection={(selection) => {
+                  openAssistantSide();
+                  assistant.analyzeSelection(selection);
+                }}
+                onTranslateParagraph={(index) => {
+                  openAssistantSide();
+                  assistant.translateParagraph(index);
+                }}
+                onTranslateArticle={() => {
+                  openAssistantSide();
+                  assistant.translateArticle();
+                }}
               />
             )
           ) : (
@@ -585,7 +617,10 @@ export function App({ api = getApi() }: { api?: ReaderApi }) {
           )}
 
           {view === "reader" && sideOpen && (
-            <Inspector onCollapse={() => setSideOpen(false)} />
+            <Inspector
+              assistant={assistant}
+              onCollapse={() => setSideOpen(false)}
+            />
           )}
         </div>
 
