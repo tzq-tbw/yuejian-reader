@@ -93,6 +93,7 @@
 | F7.1 | NSIS 安装包（`npm run tauri:build`） | 📅 阶段 5 |
 | F7.2 | 独立 Windows 用户环境安装验证、旧数据库升级 | 📅 阶段 5 |
 | F7.3 | 全链路验收脚本（方案第五节） | 📅 阶段 5 |
+| F7.4 | **应用更新分发**（老田 2026-11-22 提出）：初版打包暂缓（多改几版再打包）；更新逻辑定在阶段 5 实现——方案为 Tauri 官方 updater 插件：应用内置 updater，发布新版时把安装包 + 签名 latest.json 推到 GitHub Releases，客户端启动时检查版本号，有新版则下载静默安装。开发者（老田）只需 push 新 Release；用户端点「检查更新」或启动自动检查。前提：Tauri v2 updater 需生成签名密钥对，公钥进 tauri.conf.json | 📅 阶段 5 |
 
 ## 3. 明确不做（Non-goals）
 
