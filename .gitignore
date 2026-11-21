@@ -6,3 +6,5 @@ node_modules/
 .alma-snapshots/
 dist/
 target/
+src-tauri/gen/
+src-tauri/.cargo/
