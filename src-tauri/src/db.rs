@@ -31,6 +31,8 @@ pub struct ArticleSummary {
     pub suite_title: Option<String>,
     pub exam_type: Option<String>,
     pub sequence_no: Option<i64>,
+    pub page_range: Option<String>,
+    pub question_range: Option<String>,
     pub section_count: i64,
     pub updated_at: String,
 }
@@ -44,6 +46,7 @@ pub struct ArticleDetail {
     pub source: String,
     pub created_at: String,
     pub section_ids: Vec<String>,
+    pub question_area: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -63,6 +66,40 @@ pub struct PasteArticleInput {
     pub text: String,
     #[serde(default)]
     pub topic: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportArticleInput {
+    pub title: String,
+    pub exam_type: String,
+    pub sequence_no: i64,
+    #[serde(default)]
+    pub page_range: Option<String>,
+    #[serde(default)]
+    pub question_range: Option<String>,
+    #[serde(default)]
+    pub question_area: Option<String>,
+    pub paragraphs: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportSuiteInput {
+    pub title: String,
+    pub fingerprint: String,
+    #[serde(default)]
+    pub exam_level: Option<String>,
+    pub articles: Vec<ImportArticleInput>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportSuiteResult {
+    pub suite_id: String,
+    pub title: String,
+    pub created: bool,
+    pub articles: Vec<ArticleSummary>,
 }
 
 #[derive(Debug, Serialize)]
@@ -100,6 +137,11 @@ pub const MIGRATIONS: &[Migration] = &[
         version: 2,
         name: "default_section",
         sql: include_str!("../migrations/0002_default_section.sql"),
+    },
+    Migration {
+        version: 3,
+        name: "suite_import",
+        sql: include_str!("../migrations/0003_suite_import.sql"),
     },
 ];
 
@@ -166,7 +208,7 @@ pub fn open(path: &Path) -> Result<Connection, String> {
 const SUMMARY_SELECT: &str = "
     SELECT a.id, a.title, a.topic, a.version, a.paragraphs,
            a.suite_id, s.title AS suite_title, a.exam_type, a.sequence_no,
-           a.updated_at,
+           a.page_range, a.question_range, a.updated_at,
            (SELECT COUNT(*) FROM section_articles sa WHERE sa.article_id = a.id) AS section_count
     FROM articles a
     LEFT JOIN suites s ON s.id = a.suite_id";
@@ -190,8 +232,10 @@ fn row_to_summary(row: &Row<'_>) -> rusqlite::Result<ArticleSummary> {
         suite_title: row.get(6)?,
         exam_type: row.get(7)?,
         sequence_no: row.get(8)?,
-        updated_at: row.get(9)?,
-        section_count: row.get(10)?,
+        page_range: row.get(9)?,
+        question_range: row.get(10)?,
+        updated_at: row.get(11)?,
+        section_count: row.get(12)?,
     })
 }
 
@@ -381,6 +425,23 @@ pub fn list_library(conn: &Connection, search: Option<&str>) -> Result<Vec<Libra
     Ok(groups)
 }
 
+fn list_suite_articles(
+    conn: &Connection,
+    suite_id: &str,
+) -> Result<Vec<ArticleSummary>, String> {
+    let sql = format!(
+        "{SUMMARY_SELECT}
+         WHERE a.suite_id = ?1
+         ORDER BY a.sequence_no, a.id"
+    );
+    let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map(params![suite_id], row_to_summary)
+        .map_err(|e| e.to_string())?;
+    rows.collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(|e| e.to_string())
+}
+
 pub fn get_article(conn: &Connection, id: i64) -> Result<ArticleDetail, String> {
     let summary = conn
         .query_row(
@@ -391,11 +452,11 @@ pub fn get_article(conn: &Connection, id: i64) -> Result<ArticleDetail, String> 
         .optional()
         .map_err(|e| e.to_string())?
         .ok_or_else(|| "找不到这篇文章".to_string())?;
-    let (raw, created_at): (String, String) = conn
+    let (raw, created_at, question_area): (String, String, Option<String>) = conn
         .query_row(
-            "SELECT paragraphs, created_at FROM articles WHERE id = ?1",
+            "SELECT paragraphs, created_at, question_area FROM articles WHERE id = ?1",
             params![id],
-            |row| Ok((row.get(0)?, row.get(1)?)),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         )
         .map_err(|e| e.to_string())?;
     let mut stmt = conn
@@ -417,6 +478,7 @@ pub fn get_article(conn: &Connection, id: i64) -> Result<ArticleDetail, String> 
         source,
         created_at,
         section_ids,
+        question_area,
     })
 }
 
@@ -514,6 +576,196 @@ pub fn paste_article(
     }
     tx.commit().map_err(|e| format!("提交文章失败：{e}"))?;
     get_article(conn, id)
+}
+
+/// 一套试卷一次事务入库：套卷、全部阅读卡和默认分区成员一起提交。
+/// 同一指纹再次导入时返回已有卡片，不再新增。
+pub fn import_suite(
+    conn: &mut Connection,
+    input: &ImportSuiteInput,
+) -> Result<ImportSuiteResult, String> {
+    let title = input.title.trim();
+    if title.is_empty() {
+        return Err("套卷名称不能为空".into());
+    }
+    let fingerprint = input.fingerprint.trim();
+    if fingerprint.is_empty() {
+        return Err("缺少试卷指纹，无法安全去重".into());
+    }
+    if input.articles.is_empty() {
+        return Err("没有可导入的阅读文章".into());
+    }
+    if input.articles.len() > 20 {
+        return Err("一次导入的文章过多".into());
+    }
+
+    struct PreparedArticle {
+        title: String,
+        exam_type: String,
+        sequence_no: i64,
+        page_range: Option<String>,
+        question_range: Option<String>,
+        question_area: Option<String>,
+        paragraphs: Vec<String>,
+        topic: String,
+    }
+
+    let mut prepared = Vec::with_capacity(input.articles.len());
+    for (index, article) in input.articles.iter().enumerate() {
+        let article_title = article.title.trim();
+        if article_title.is_empty() {
+            return Err(format!("第 {} 篇文章标题不能为空", index + 1));
+        }
+        let exam_type = article.exam_type.trim();
+        if exam_type.is_empty() {
+            return Err(format!("《{article_title}》缺少题型"));
+        }
+        if article.sequence_no <= 0 {
+            return Err(format!("《{article_title}》篇次不合法"));
+        }
+        let paragraphs: Vec<String> = article
+            .paragraphs
+            .iter()
+            .map(|paragraph| paragraph.split_whitespace().collect::<Vec<_>>().join(" "))
+            .filter(|paragraph| !paragraph.is_empty())
+            .collect();
+        if paragraphs.is_empty() {
+            return Err(format!("《{article_title}》正文为空"));
+        }
+        let question_area = match article.question_area.as_deref().map(str::trim) {
+            Some(raw) if !raw.is_empty() => {
+                let value: serde_json::Value = serde_json::from_str(raw)
+                    .map_err(|_| format!("《{article_title}》题目区格式不合法"))?;
+                Some(serde_json::to_string(&value).map_err(|e| e.to_string())?)
+            }
+            _ => None,
+        };
+        let topic = classify_topic(&paragraphs.join(" "));
+        prepared.push(PreparedArticle {
+            title: article_title.to_string(),
+            exam_type: exam_type.to_string(),
+            sequence_no: article.sequence_no,
+            page_range: article
+                .page_range
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_string),
+            question_range: article
+                .question_range
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_string),
+            question_area,
+            paragraphs,
+            topic,
+        });
+    }
+
+    let existing: Option<(String, String)> = conn
+        .query_row(
+            "SELECT id, title FROM suites WHERE fingerprint = ?1",
+            params![fingerprint],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()
+        .map_err(|e| e.to_string())?;
+    if let Some((suite_id, suite_title)) = existing {
+        let articles = list_suite_articles(conn, &suite_id)?;
+        return Ok(ImportSuiteResult {
+            suite_id,
+            title: suite_title,
+            created: false,
+            articles,
+        });
+    }
+
+    let exam_level = input
+        .exam_level
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    let suite_id = Uuid::new_v4().to_string();
+    let tx = conn
+        .transaction_with_behavior(TransactionBehavior::Immediate)
+        .map_err(|e| e.to_string())?;
+    tx.execute(
+        "INSERT INTO suites (id, title, source, exam_level, fingerprint)
+         VALUES (?1, ?2, 'pdf', ?3, ?4)",
+        params![suite_id, title, exam_level, fingerprint],
+    )
+    .map_err(|e| format!("保存套卷失败：{e}"))?;
+
+    let default_section: Option<String> = tx
+        .query_row(
+            "SELECT id FROM reading_sections ORDER BY sort_order, created_at LIMIT 1",
+            [],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|e| e.to_string())?;
+    let mut position: i64 = if let Some(section_id) = &default_section {
+        tx.query_row(
+            "SELECT COALESCE(MAX(position), 0) FROM section_articles WHERE section_id = ?1",
+            params![section_id],
+            |row| row.get(0),
+        )
+        .map_err(|e| e.to_string())?
+    } else {
+        0
+    };
+
+    for article in prepared {
+        let raw = serde_json::to_string(&article.paragraphs).map_err(|e| e.to_string())?;
+        tx.execute(
+            "INSERT INTO articles
+                (suite_id, title, paragraphs, topic, exam_type, sequence_no,
+                 page_range, question_range, question_area)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            params![
+                suite_id,
+                article.title,
+                raw,
+                article.topic,
+                article.exam_type,
+                article.sequence_no,
+                article.page_range,
+                article.question_range,
+                article.question_area
+            ],
+        )
+        .map_err(|e| {
+            let message = e.to_string();
+            if message.contains("UNIQUE") {
+                format!(
+                    "题号重复：第 {} 篇在一套卷内出现了两次",
+                    article.sequence_no
+                )
+            } else {
+                format!("保存《{}》失败：{message}", article.title)
+            }
+        })?;
+        let article_id = tx.last_insert_rowid();
+        if let Some(section_id) = &default_section {
+            position += 1;
+            tx.execute(
+                "INSERT INTO section_articles (section_id, article_id, position)
+                 VALUES (?1, ?2, ?3)",
+                params![section_id, article_id, position],
+            )
+            .map_err(|e| format!("加入默认分区失败：{e}"))?;
+        }
+    }
+    tx.commit().map_err(|e| format!("提交套卷失败：{e}"))?;
+
+    let articles = list_suite_articles(conn, &suite_id)?;
+    Ok(ImportSuiteResult {
+        suite_id,
+        title: title.to_string(),
+        created: true,
+        articles,
+    })
 }
 
 pub fn update_article(
@@ -957,5 +1209,104 @@ mod tests {
     fn single_line_paste_creates_one_paragraph_per_line() {
         let paragraphs = parse_pasted_text("One line.\nTwo line.\nThree line.");
         assert_eq!(paragraphs.len(), 3);
+    }
+
+    fn import_input(sequence_numbers: &[i64]) -> ImportSuiteInput {
+        ImportSuiteInput {
+            title: "2026年6月大学英语四级真题（第1套）".into(),
+            fingerprint: "fingerprint-001".into(),
+            exam_level: Some("四级".into()),
+            articles: sequence_numbers
+                .iter()
+                .map(|sequence_no| ImportArticleInput {
+                    title: format!("阅读文章 {sequence_no}"),
+                    exam_type: "仔细阅读".into(),
+                    sequence_no: *sequence_no,
+                    page_range: Some(format!("{sequence_no}–{}", sequence_no + 1)),
+                    question_range: Some(format!("{}–{}", 45 + sequence_no, 49 + sequence_no)),
+                    question_area: Some(r#"{"kind":"multiple_choice","questions":[]}"#.into()),
+                    paragraphs: vec!["A short reading passage for the import test.".into()],
+                })
+                .collect(),
+        }
+    }
+
+    fn row_count(conn: &Connection, table: &str) -> i64 {
+        conn.query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| row.get(0))
+            .unwrap()
+    }
+
+    #[test]
+    fn import_suite_creates_cards_with_metadata_and_default_membership() {
+        let mut conn = memory_db();
+        let result = import_suite(&mut conn, &import_input(&[1, 2, 3, 4])).unwrap();
+        assert!(result.created);
+        assert_eq!(result.title, "2026年6月大学英语四级真题（第1套）");
+        assert_eq!(result.articles.len(), 4);
+        assert_eq!(
+            result
+                .articles
+                .iter()
+                .map(|article| article.sequence_no.unwrap())
+                .collect::<Vec<_>>(),
+            vec![1, 2, 3, 4]
+        );
+        let first = &result.articles[0];
+        assert_eq!(first.suite_id.as_deref(), Some(result.suite_id.as_str()));
+        assert_eq!(first.page_range.as_deref(), Some("1–2"));
+        assert_eq!(first.question_range.as_deref(), Some("46–50"));
+
+        let detail = get_article(&conn, first.id).unwrap();
+        assert_eq!(detail.source, "suite");
+        assert_eq!(
+            detail.question_area.as_deref(),
+            Some(r#"{"kind":"multiple_choice","questions":[]}"#)
+        );
+        assert_eq!(detail.section_ids.len(), 1);
+
+        let groups = list_library(&conn, None).unwrap();
+        assert_eq!(groups.len(), 1);
+        assert_eq!(groups[0].source, "pdf");
+        assert_eq!(groups[0].articles.len(), 4);
+        assert_eq!(groups[0].articles[0].title, "阅读文章 1");
+        let sections = list_sections(&conn).unwrap();
+        assert_eq!(sections[0].article_count, 4);
+    }
+
+    #[test]
+    fn importing_the_same_fingerprint_does_not_create_a_second_suite() {
+        let mut conn = memory_db();
+        let first = import_suite(&mut conn, &import_input(&[1, 2, 3, 4])).unwrap();
+        let second = import_suite(&mut conn, &import_input(&[1, 2, 3, 4])).unwrap();
+        assert!(!second.created);
+        assert_eq!(second.suite_id, first.suite_id);
+        assert_eq!(
+            second.articles.iter().map(|article| article.id).collect::<Vec<_>>(),
+            first.articles.iter().map(|article| article.id).collect::<Vec<_>>()
+        );
+        assert_eq!(row_count(&conn, "suites"), 1);
+        assert_eq!(row_count(&conn, "articles"), 4);
+        assert_eq!(row_count(&conn, "section_articles"), 4);
+    }
+
+    #[test]
+    fn duplicate_sequence_rolls_back_the_whole_suite() {
+        let mut conn = memory_db();
+        let error = import_suite(&mut conn, &import_input(&[1, 1])).unwrap_err();
+        assert!(error.contains("题号重复"));
+        assert_eq!(row_count(&conn, "suites"), 0);
+        assert_eq!(row_count(&conn, "articles"), 0);
+        assert_eq!(row_count(&conn, "section_articles"), 0);
+    }
+
+    #[test]
+    fn invalid_import_is_rejected_before_any_write() {
+        let mut conn = memory_db();
+        let mut input = import_input(&[1]);
+        input.articles[0].paragraphs = vec!["   ".into()];
+        let error = import_suite(&mut conn, &input).unwrap_err();
+        assert!(error.contains("正文为空"));
+        assert_eq!(row_count(&conn, "suites"), 0);
+        assert_eq!(row_count(&conn, "articles"), 0);
     }
 }

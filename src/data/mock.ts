@@ -2,6 +2,9 @@ import {
   type AddResult,
   type ArticleDetail,
   type ArticleSummary,
+  type ImportArticleInput,
+  type ImportSuiteInput,
+  type ImportSuiteResult,
   type LibraryGroup,
   type ReaderApi,
   type Section,
@@ -27,6 +30,22 @@ interface MockArticle {
   version: number;
   createdAt: string;
   updatedAt: string;
+  suiteId: string | null;
+  examType: string | null;
+  sequenceNo: number | null;
+  pageRange: string | null;
+  questionRange: string | null;
+  questionArea: string | null;
+}
+
+interface MockSuite {
+  id: string;
+  title: string;
+  source: string;
+  fingerprint: string;
+  examLevel: string | null;
+  sortOrder: number;
+  createdAt: string;
 }
 
 interface MockMembership {
@@ -38,7 +57,9 @@ interface MockMembership {
 
 interface MockState {
   nextArticleId: number;
+  nextSuiteId: number;
   sections: Array<{ id: string; name: string; sortOrder: number; createdAt: string }>;
+  suites: MockSuite[];
   articles: MockArticle[];
   memberships: MockMembership[];
 }
@@ -64,9 +85,11 @@ function defaultState(): MockState {
   const now = new Date().toISOString();
   return {
     nextArticleId: 1,
+    nextSuiteId: 1,
     sections: [
       { id: "default-section", name: "我的阅读", sortOrder: 10, createdAt: now },
     ],
+    suites: [],
     articles: [],
     memberships: [],
   };
@@ -83,6 +106,9 @@ function sectionById(state: MockState, id: string) {
 }
 
 function summary(state: MockState, article: MockArticle): ArticleSummary {
+  const suite = article.suiteId
+    ? state.suites.find((item) => item.id === article.suiteId)
+    : undefined;
   return {
     id: article.id,
     title: article.title,
@@ -90,10 +116,12 @@ function summary(state: MockState, article: MockArticle): ArticleSummary {
     version: article.version,
     paragraphCount: article.paragraphs.length,
     wordCount: countWords(article.paragraphs.join(" ")),
-    suiteId: null,
-    suiteTitle: null,
-    examType: null,
-    sequenceNo: null,
+    suiteId: article.suiteId,
+    suiteTitle: suite?.title ?? null,
+    examType: article.examType,
+    sequenceNo: article.sequenceNo,
+    pageRange: article.pageRange,
+    questionRange: article.questionRange,
     sectionCount: state.memberships.filter((m) => m.articleId === article.id).length,
     updatedAt: article.updatedAt,
   };
@@ -103,11 +131,12 @@ function detail(state: MockState, article: MockArticle): ArticleDetail {
   return {
     ...summary(state, article),
     paragraphs: [...article.paragraphs],
-    source: "paste",
+    source: article.suiteId ? "suite" : "paste",
     createdAt: article.createdAt,
     sectionIds: state.memberships
       .filter((m) => m.articleId === article.id)
       .map((m) => m.sectionId),
+    questionArea: article.questionArea,
   };
 }
 
@@ -132,6 +161,17 @@ export function createMockApi(storage: StorageLike = createMemoryStorage()): Rea
     state = defaultState();
   }
   if (!state.sections.length) state.sections.push(defaultState().sections[0]);
+  if (!Array.isArray(state.suites)) state.suites = [];
+  if (typeof state.nextSuiteId !== "number") state.nextSuiteId = 1;
+  for (const article of state.articles) {
+    const legacy = article as Partial<MockArticle>;
+    article.suiteId = legacy.suiteId ?? null;
+    article.examType = legacy.examType ?? null;
+    article.sequenceNo = legacy.sequenceNo ?? null;
+    article.pageRange = legacy.pageRange ?? null;
+    article.questionRange = legacy.questionRange ?? null;
+    article.questionArea = legacy.questionArea ?? null;
+  }
 
   const persist = () => storage.setItem(STORAGE_KEY, JSON.stringify(state));
 
@@ -183,19 +223,39 @@ export function createMockApi(storage: StorageLike = createMemoryStorage()): Rea
 
     async listLibrary(search?: string) {
       const needle = (search ?? "").trim().toLowerCase();
-      const articles = [...state.articles]
-        .filter((a) => !needle || a.title.toLowerCase().includes(needle))
+      const matches = (article: MockArticle) =>
+        !needle || article.title.toLowerCase().includes(needle);
+      const groups: LibraryGroup[] = [];
+      const suites = [...state.suites].sort(
+        (a, b) => a.sortOrder - b.sortOrder || a.createdAt.localeCompare(b.createdAt),
+      );
+      for (const suite of suites) {
+        const articles = state.articles
+          .filter((article) => article.suiteId === suite.id && matches(article))
+          .sort((a, b) => (a.sequenceNo ?? 0) - (b.sequenceNo ?? 0) || a.id - b.id)
+          .map((article) => summary(state, article));
+        if (articles.length) {
+          groups.push({
+            suiteId: suite.id,
+            title: suite.title,
+            source: suite.source,
+            articles,
+          });
+        }
+      }
+      const standalone = state.articles
+        .filter((article) => article.suiteId === null && matches(article))
         .sort((a, b) => b.id - a.id)
-        .map((a) => summary(state, a));
-      if (!articles.length) return [];
-      return [
-        {
+        .map((article) => summary(state, article));
+      if (standalone.length) {
+        groups.push({
           suiteId: null,
           title: "单篇材料",
           source: "paste",
-          articles,
-        },
-      ] satisfies LibraryGroup[];
+          articles: standalone,
+        });
+      }
+      return groups;
     },
 
     async getArticle(id: number) {
@@ -216,6 +276,12 @@ export function createMockApi(storage: StorageLike = createMemoryStorage()): Rea
         version: 1,
         createdAt: now,
         updatedAt: now,
+        suiteId: null,
+        examType: null,
+        sequenceNo: null,
+        pageRange: null,
+        questionRange: null,
+        questionArea: null,
       };
       state.articles.push(article);
       const target = firstSection(state);
@@ -229,6 +295,125 @@ export function createMockApi(storage: StorageLike = createMemoryStorage()): Rea
       }
       persist();
       return detail(state, article);
+    },
+
+    async importSuite(input: ImportSuiteInput): Promise<ImportSuiteResult> {
+      const title = input.title.trim();
+      const fingerprint = input.fingerprint.trim();
+      if (!title) throw new Error("套卷名称不能为空");
+      if (!fingerprint) throw new Error("缺少试卷指纹，无法安全去重");
+      if (!input.articles.length) throw new Error("没有可导入的阅读文章");
+      if (input.articles.length > 20) throw new Error("一次导入的文章过多");
+
+      const prepared = input.articles.map((article: ImportArticleInput, index) => {
+        const articleTitle = article.title.trim();
+        if (!articleTitle) throw new Error(`第 ${index + 1} 篇文章标题不能为空`);
+        const examType = article.examType.trim();
+        if (!examType) throw new Error(`《${articleTitle}》缺少题型`);
+        if (!Number.isInteger(article.sequenceNo) || article.sequenceNo <= 0) {
+          throw new Error(`《${articleTitle}》篇次不合法`);
+        }
+        const paragraphs = article.paragraphs
+          .map((paragraph) => paragraph.replace(/\s+/g, " ").trim())
+          .filter(Boolean);
+        if (!paragraphs.length) throw new Error(`《${articleTitle}》正文为空`);
+        let questionArea: string | null = null;
+        if (article.questionArea?.trim()) {
+          try {
+            questionArea = JSON.stringify(JSON.parse(article.questionArea));
+          } catch {
+            throw new Error(`《${articleTitle}》题目区格式不合法`);
+          }
+        }
+        return {
+          title: articleTitle,
+          examType,
+          sequenceNo: article.sequenceNo,
+          pageRange: article.pageRange?.trim() || null,
+          questionRange: article.questionRange?.trim() || null,
+          questionArea,
+          paragraphs,
+          topic: classifyTopic(paragraphs.join(" ")),
+        };
+      });
+
+      const sequences = new Set<number>();
+      for (const article of prepared) {
+        if (sequences.has(article.sequenceNo)) {
+          throw new Error(`题号重复：第 ${article.sequenceNo} 篇在一套卷内出现了两次`);
+        }
+        sequences.add(article.sequenceNo);
+      }
+
+      const existing = state.suites.find((suite) => suite.fingerprint === fingerprint);
+      if (existing) {
+        const articles = state.articles
+          .filter((article) => article.suiteId === existing.id)
+          .sort((a, b) => (a.sequenceNo ?? 0) - (b.sequenceNo ?? 0) || a.id - b.id)
+          .map((article) => summary(state, article));
+        return {
+          suiteId: existing.id,
+          title: existing.title,
+          created: false,
+          articles,
+        };
+      }
+
+      const snapshot = JSON.stringify(state);
+      try {
+        const now = new Date().toISOString();
+        const maxOrder = state.suites.reduce((max, suite) => Math.max(max, suite.sortOrder), 0);
+        const suite: MockSuite = {
+          id: `suite-${state.nextSuiteId++}`,
+          title,
+          source: "pdf",
+          fingerprint,
+          examLevel: input.examLevel?.trim() || null,
+          sortOrder: maxOrder + 10,
+          createdAt: now,
+        };
+        state.suites.push(suite);
+        const target = firstSection(state);
+        let position = target
+          ? state.memberships
+              .filter((m) => m.sectionId === target.id)
+              .reduce((max, m) => Math.max(max, m.position), 0)
+          : 0;
+        const created: ArticleSummary[] = [];
+        for (const article of prepared) {
+          const row: MockArticle = {
+            id: state.nextArticleId++,
+            title: article.title,
+            paragraphs: article.paragraphs,
+            topic: article.topic,
+            version: 1,
+            createdAt: now,
+            updatedAt: now,
+            suiteId: suite.id,
+            examType: article.examType,
+            sequenceNo: article.sequenceNo,
+            pageRange: article.pageRange,
+            questionRange: article.questionRange,
+            questionArea: article.questionArea,
+          };
+          state.articles.push(row);
+          if (target) {
+            position += 1;
+            state.memberships.push({
+              sectionId: target.id,
+              articleId: row.id,
+              position,
+              addedAt: now,
+            });
+          }
+          created.push(summary(state, row));
+        }
+        persist();
+        return { suiteId: suite.id, title, created: true, articles: created };
+      } catch (cause) {
+        state = JSON.parse(snapshot) as MockState;
+        throw cause;
+      }
     },
 
     async updateArticle(input: UpdateArticleInput) {

@@ -517,6 +517,114 @@ footer span { margin-left: auto; }
   font: 13px "Segoe UI", "Microsoft YaHei", sans-serif;
 }
 .libEmpty button.primary { background: #2c65be; border-color: #2c65be; color: white; }
+.libEmpty button + button { margin-left: 8px; }
+
+/* PDF 导入预览 */
+.importWarnings {
+  margin: 0 0 16px;
+  padding: 9px 12px 9px 30px;
+  background: #fff8e8;
+  border: 1px solid #efd9a9;
+  border-radius: 9px;
+  color: #7a5a1f;
+  font-size: 12px;
+  line-height: 1.7;
+}
+.importCards { max-height: 47vh; overflow: auto; margin: 14px 0 4px; padding-right: 3px; }
+.importCard {
+  border: 1px solid #e0e7f0;
+  border-radius: 11px;
+  background: #fbfcfe;
+  margin-bottom: 9px;
+  overflow: hidden;
+}
+.importCard[open] { background: white; border-color: #c9d8ea; }
+.importCard summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 11px 13px;
+  cursor: pointer;
+  list-style-position: inside;
+  color: #31475f;
+}
+.importCard summary:hover { background: #f4f8fd; }
+.importType {
+  flex: none;
+  background: #e8f0fc;
+  color: #2459a3;
+  border-radius: 999px;
+  padding: 2px 9px;
+  font-size: 11px;
+  font-weight: 600;
+}
+.importTitle { font: 600 15px/1.4 Georgia, serif; color: #22364f; }
+.importMeta { color: #7b8aa0; font-size: 11px; }
+.importWarnBadge {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: #8a5c12;
+  background: #fff4dc;
+  border-radius: 8px;
+  padding: 2px 7px;
+  font-size: 11px;
+}
+.importCardBody { padding: 4px 14px 15px; border-top: 1px solid #e8eef6; }
+.importWarning {
+  margin: 10px 0 0;
+  padding: 7px 9px;
+  background: #fff8e8;
+  border: 1px solid #efd9a9;
+  border-radius: 7px;
+  color: #7a5a1f;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.dialog .importBody { min-height: 150px; max-height: 260px; font-size: 14px; }
+.importArea {
+  margin-top: 14px;
+  padding: 11px 12px;
+  background: #f7f9fd;
+  border: 1px solid #e1e8f2;
+  border-radius: 9px;
+}
+.importAreaHead {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #3d5d85;
+  font-size: 12px;
+  font-weight: 600;
+  margin-bottom: 7px;
+}
+.importAreaLine { margin: 0 0 7px; color: #566b86; font-size: 12px; }
+.importWordBank { display: flex; flex-wrap: wrap; gap: 5px 8px; }
+.importWordBank span {
+  background: white;
+  border: 1px solid #dce5f0;
+  border-radius: 6px;
+  padding: 2px 7px;
+  font-size: 12px;
+  color: #3c4e66;
+}
+.importWordBank b { color: #31578d; }
+.importStatements, .importQuestions { margin: 0; padding: 0; list-style: none; max-height: 210px; overflow: auto; }
+.importStatements li, .importQuestion {
+  font-size: 12px;
+  line-height: 1.65;
+  color: #46586f;
+  padding: 4px 0;
+  border-bottom: 1px dashed #e3e9f2;
+}
+.importStatements li:last-child, .importQuestion:last-child { border-bottom: 0; }
+.importQuestion p { margin: 0; font-size: 12px; color: #33465f; }
+.importQuestion ul { margin: 3px 0 2px 16px; padding: 0; }
+.importQuestion li { font-size: 12px; line-height: 1.6; }
+.importQuestion b, .importStatements b { color: #31578d; }
+.importRaw { margin: 0; color: #7a5a1f; font-size: 12px; }
 
 /* 正文编辑 */
 .editorPane { overflow: auto; flex: 1; background: #fcfdff; }

@@ -1,15 +1,23 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
   BookOpen,
   ChevronDown,
   ChevronRight,
   FilePlus2,
+  FileUp,
   LibraryBig,
   Search,
   SquarePen,
 } from "lucide-react";
-import type { ArticleDetail, LibraryGroup, ReaderApi, Section } from "../data/types";
+import type {
+  ArticleDetail,
+  ImportSuiteResult,
+  LibraryGroup,
+  ReaderApi,
+  Section,
+} from "../data/types";
 import { ArticleEditDialog } from "./ArticleEditDialog";
+import { PdfImportDialog } from "../import/PdfImportDialog";
 
 interface LibraryPageProps {
   api: ReaderApi;
@@ -48,6 +56,12 @@ export function LibraryPage({
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editReturnFocus, setEditReturnFocus] = useState<HTMLElement | null>(null);
+  const [importRequest, setImportRequest] = useState<{
+    file: File;
+    returnFocus: HTMLElement | null;
+  } | null>(null);
+  const importInputRef = useRef<HTMLInputElement>(null);
+  const importReturnFocusRef = useRef<HTMLElement | null>(null);
 
   const filtered = useMemo(() => {
     const needle = search.trim().toLowerCase();
@@ -78,6 +92,27 @@ export function LibraryPage({
     await onChanged(article);
   }
 
+  function openImportPicker(opener: HTMLElement) {
+    importReturnFocusRef.current = opener;
+    importInputRef.current?.click();
+  }
+
+  function handleImportFile(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.currentTarget.files?.[0] ?? null;
+    event.currentTarget.value = "";
+    if (!file) return;
+    setImportRequest({ file, returnFocus: importReturnFocusRef.current });
+  }
+
+  async function handleImported(result: ImportSuiteResult) {
+    await onChanged();
+    if (result.created) {
+      notify(`已导入《${result.title}》${result.articles.length} 篇阅读`);
+    } else {
+      notify(`《${result.title}》此前已导入，本次未重复建卡`);
+    }
+  }
+
   return (
     <div className="libraryMain">
       <div className="libTop">
@@ -98,10 +133,24 @@ export function LibraryPage({
         <button
           type="button"
           className="primary"
+          onClick={(event) => openImportPicker(event.currentTarget)}
+        >
+          <FileUp size={15} /> 导入 PDF
+        </button>
+        <button
+          type="button"
+          className="primary"
           onClick={(event) => onOpenPaste(event.currentTarget)}
         >
           <FilePlus2 size={15} /> 粘贴新文章
         </button>
+        <input
+          ref={importInputRef}
+          type="file"
+          hidden
+          accept=".pdf,application/pdf"
+          onChange={handleImportFile}
+        />
       </div>
 
       <div className="libScroll">
@@ -113,8 +162,8 @@ export function LibraryPage({
               <LibraryBig size={42} />
               <h2>资料库还是空的</h2>
               <p>
-                粘贴一篇英文材料，会生成一张文章卡并保留段落。文章默认加入「我的阅读」，
-                之后可在阅读列表中组织到任意分区。
+                粘贴一篇英文材料会生成一张文章卡并保留段落；也可以导入带文字层的四级真题 PDF，
+                一次拆成阅读卡。文章默认加入「我的阅读」，之后可在阅读列表中组织到任意分区。
               </p>
               <button
                 type="button"
@@ -122,6 +171,12 @@ export function LibraryPage({
                 onClick={(event) => onOpenPaste(event.currentTarget)}
               >
                 粘贴第一篇文章
+              </button>
+              <button
+                type="button"
+                onClick={(event) => openImportPicker(event.currentTarget)}
+              >
+                导入 PDF 试卷
               </button>
             </div>
           )}
@@ -154,9 +209,12 @@ export function LibraryPage({
                         <div className="libRowTitle">{article.title}</div>
                         <div className="libRowMeta">
                           <span className="topic">{article.topic}</span>
+                          {article.examType && <span>{article.examType}</span>}
                           {article.sequenceNo != null && (
                             <span>第 {article.sequenceNo} 篇</span>
                           )}
+                          {article.pageRange && <span>第 {article.pageRange} 页</span>}
+                          {article.questionRange && <span>题 {article.questionRange}</span>}
                           <span>{article.paragraphCount} 段</span>
                           <span>{article.wordCount} 词</span>
                           <span>第 {article.version} 版</span>
@@ -207,6 +265,15 @@ export function LibraryPage({
         onSaved={handleSaved}
         notify={notify}
         returnFocus={editReturnFocus}
+      />
+
+      <PdfImportDialog
+        api={api}
+        file={importRequest?.file ?? null}
+        onClose={() => setImportRequest(null)}
+        onImported={handleImported}
+        onRetryPick={() => importInputRef.current?.click()}
+        returnFocus={importRequest?.returnFocus ?? null}
       />
     </div>
   );

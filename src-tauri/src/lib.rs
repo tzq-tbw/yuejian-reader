@@ -1,8 +1,8 @@
 mod db;
 
 use db::{
-    AddResult, ArticleDetail, ArticleSummary, LibraryGroup, PasteArticleInput, Section,
-    UpdateArticleInput,
+    AddResult, ArticleDetail, ArticleSummary, ImportSuiteInput, ImportSuiteResult, LibraryGroup,
+    PasteArticleInput, Section, UpdateArticleInput,
 };
 use std::sync::Mutex;
 use tauri::{Manager, State};
@@ -73,6 +73,14 @@ fn paste_article(
 }
 
 #[tauri::command]
+fn import_suite(
+    state: State<'_, DbState>,
+    input: ImportSuiteInput,
+) -> Result<ImportSuiteResult, String> {
+    with_conn(&state, |conn| db::import_suite(conn, &input))
+}
+
+#[tauri::command]
 fn update_article(
     state: State<'_, DbState>,
     input: UpdateArticleInput,
@@ -129,6 +137,7 @@ pub fn run() {
             list_library,
             get_article,
             paste_article,
+            import_suite,
             update_article,
             add_articles_to_section,
             remove_article_from_section,

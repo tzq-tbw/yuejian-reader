@@ -19,6 +19,8 @@ export interface ArticleSummary {
   suiteTitle: string | null;
   examType: string | null;
   sequenceNo: number | null;
+  pageRange: string | null;
+  questionRange: string | null;
   sectionCount: number;
   updatedAt: string;
 }
@@ -28,6 +30,8 @@ export interface ArticleDetail extends ArticleSummary {
   source: string;
   createdAt: string;
   sectionIds: string[];
+  /** 随篇题目区的 JSON（结构化内容由 src/import 定义）。 */
+  questionArea: string | null;
 }
 
 export interface LibraryGroup {
@@ -49,6 +53,32 @@ export interface UpdateArticleInput {
   expectedVersion: number;
 }
 
+export interface ImportArticleInput {
+  title: string;
+  examType: string;
+  sequenceNo: number;
+  pageRange?: string | null;
+  questionRange?: string | null;
+  questionArea?: string | null;
+  paragraphs: string[];
+}
+
+export interface ImportSuiteInput {
+  title: string;
+  /** 试卷文件内容的 SHA-256；同一文件重复导入时不重复建卡。 */
+  fingerprint: string;
+  examLevel?: string | null;
+  articles: ImportArticleInput[];
+}
+
+export interface ImportSuiteResult {
+  suiteId: string;
+  title: string;
+  /** false 表示这套试卷此前已导入，articles 为已有卡片。 */
+  created: boolean;
+  articles: ArticleSummary[];
+}
+
 export interface ReaderApi {
   listSections(): Promise<Section[]>;
   createSection(name: string): Promise<Section>;
@@ -58,6 +88,7 @@ export interface ReaderApi {
   getArticle(id: number): Promise<ArticleDetail>;
   /** topic 省略或为空时由后端按正文自动分类。 */
   pasteArticle(input: { title: string; text: string; topic?: string }): Promise<ArticleDetail>;
+  importSuite(input: ImportSuiteInput): Promise<ImportSuiteResult>;
   updateArticle(input: UpdateArticleInput): Promise<ArticleDetail>;
   addArticlesToSection(sectionId: string, articleIds: number[]): Promise<AddResult>;
   removeArticleFromSection(sectionId: string, articleId: number): Promise<boolean>;

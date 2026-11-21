@@ -3,6 +3,8 @@ import type {
   AddResult,
   ArticleDetail,
   ArticleSummary,
+  ImportSuiteInput,
+  ImportSuiteResult,
   LibraryGroup,
   ReaderApi,
   Section,
@@ -19,6 +21,7 @@ export const tauriApi: ReaderApi = {
   listLibrary: (search) => invoke<LibraryGroup[]>("list_library", { search: search ?? null }),
   getArticle: (id) => invoke<ArticleDetail>("get_article", { id }),
   pasteArticle: (input) => invoke<ArticleDetail>("paste_article", { input }),
+  importSuite: (input: ImportSuiteInput) => invoke<ImportSuiteResult>("import_suite", { input }),
   updateArticle: (input: UpdateArticleInput) =>
     invoke<ArticleDetail>("update_article", { input }),
   addArticlesToSection: (sectionId, articleIds) =>

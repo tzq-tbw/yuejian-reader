@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createMemoryStorage, createMockApi } from "./mock";
+import type { ImportSuiteInput } from "./types";
 
 describe("mock workspace API", () => {
   it("splits a three-paragraph paste into one card and the default section", async () => {
@@ -95,5 +96,83 @@ describe("mock workspace API", () => {
     expect(reloaded.paragraphs).toEqual(["Edited paragraph."]);
     expect(reloaded.version).toBe(2);
     expect((await second.listSections())[0].articleCount).toBe(1);
+  });
+
+  function importInput(): ImportSuiteInput {
+    return {
+      title: "2026年6月大学英语四级真题（第1套）",
+      fingerprint: "sample-fingerprint",
+      examLevel: "四级",
+      articles: [1, 2, 3, 4].map((sequenceNo) => ({
+        title: `阅读文章 ${sequenceNo}`,
+        examType: sequenceNo <= 2 ? "选词填空" : "仔细阅读",
+        sequenceNo,
+        pageRange: `${sequenceNo}–${sequenceNo + 1}`,
+        questionRange: `${25 + sequenceNo * 5}–${29 + sequenceNo * 5}`,
+        questionArea: JSON.stringify({ kind: "multiple_choice", questions: [] }),
+        paragraphs: [`Passage ${sequenceNo} has enough English text for reading practice.`],
+      })),
+    };
+  }
+
+  it("imports a suite once, groups the library and keeps metadata", async () => {
+    const storage = createMemoryStorage();
+    const api = createMockApi(storage);
+    const created = await api.importSuite(importInput());
+    expect(created.created).toBe(true);
+    expect(created.articles).toHaveLength(4);
+    expect(created.articles.map((article) => article.sequenceNo)).toEqual([1, 2, 3, 4]);
+    expect(created.articles[0].pageRange).toBe("1–2");
+    expect(created.articles[0].questionRange).toBe("30–34");
+
+    const groups = await api.listLibrary();
+    expect(groups).toHaveLength(1);
+    expect(groups[0].suiteId).toBe(created.suiteId);
+    expect(groups[0].title).toBe("2026年6月大学英语四级真题（第1套）");
+    expect(groups[0].source).toBe("pdf");
+    expect(groups[0].articles.map((article) => article.title)).toEqual([
+      "阅读文章 1",
+      "阅读文章 2",
+      "阅读文章 3",
+      "阅读文章 4",
+    ]);
+    const defaultSection = (await api.listSections())[0];
+    expect(defaultSection.articleCount).toBe(4);
+
+    const detail = await api.getArticle(created.articles[0].id);
+    expect(detail.questionArea).toContain("multiple_choice");
+
+    const again = await api.importSuite(importInput());
+    expect(again.created).toBe(false);
+    expect(again.articles.map((article) => article.id)).toEqual(
+      created.articles.map((article) => article.id),
+    );
+    expect((await api.listSections())[0].articleCount).toBe(4);
+  });
+
+  it("rejects an invalid article before writing any card", async () => {
+    const api = createMockApi(createMemoryStorage());
+    const input = importInput();
+    input.articles[0].paragraphs = ["   "];
+    await expect(api.importSuite(input)).rejects.toThrow("正文为空");
+    expect(await api.listLibrary()).toEqual([]);
+  });
+
+  it("restores in-memory state when persistence fails", async () => {
+    const inner = createMemoryStorage();
+    let fail = true;
+    const storage = {
+      getItem: inner.getItem,
+      removeItem: inner.removeItem,
+      setItem: (key: string, value: string) => {
+        if (fail) throw new Error("磁盘已满");
+        inner.setItem(key, value);
+      },
+    };
+    const api = createMockApi(storage);
+    await expect(api.importSuite(importInput())).rejects.toThrow("磁盘已满");
+    fail = false;
+    expect(await api.listLibrary()).toEqual([]);
+    expect((await api.listSections())[0].articleCount).toBe(0);
   });
 });

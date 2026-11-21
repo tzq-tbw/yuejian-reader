@@ -261,6 +261,7 @@ export function LibraryPicker({
                               {article.sequenceNo != null
                                 ? ` · 第 ${article.sequenceNo} 篇`
                                 : ""}{" "}
+                              {article.questionRange ? `· 题 ${article.questionRange} ` : ""}
                               · {article.paragraphCount} 段 · 第 {article.version} 版
                             </span>
                           </span>
