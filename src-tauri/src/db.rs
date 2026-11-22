@@ -264,6 +264,11 @@ pub const MIGRATIONS: &[Migration] = &[
         name: "collection_review",
         sql: include_str!("../migrations/0004_collection_review.sql"),
     },
+    Migration {
+        version: 5,
+        name: "wordlists",
+        sql: include_str!("../migrations/0005_wordlists.sql"),
+    },
 ];
 
 pub fn run_migrations(conn: &mut Connection, migrations: &[Migration]) -> Result<usize, String> {
@@ -295,6 +300,9 @@ pub fn run_migrations(conn: &mut Connection, migrations: &[Migration]) -> Result
             .map_err(|e| format!("开始迁移事务失败：{e}"))?;
         tx.execute_batch(migration.sql)
             .map_err(|e| format!("迁移 {} 执行失败：{e}", migration.version))?;
+        if migration.version == 5 {
+            crate::wordlists::seed_builtin_wordlists(&tx)?;
+        }
         tx.execute(
             "INSERT INTO schema_migrations (version, name) VALUES (?1, ?2)",
             params![migration.version, migration.name],

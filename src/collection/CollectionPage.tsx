@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from "react";
 import {
   BookOpen,
   Bookmark,
+  ChevronDown,
+  ChevronUp,
   Languages,
   RefreshCw,
   TextQuote,
@@ -21,6 +23,7 @@ import {
   parseStoredAnalysis,
 } from "./analysis";
 import { localDateKey } from "../review/schedule";
+import { firstCommonMeaning } from "./wordExport";
 
 interface CollectionPageProps {
   api: ReaderApi;
@@ -69,6 +72,7 @@ export function CollectionPage({
   const [sentences, setSentences] = useState<LongSentenceFavorite[]>([]);
   const [loading, setLoading] = useState(true);
   const [filling, setFilling] = useState<string | null>(null);
+  const [expandedWordIds, setExpandedWordIds] = useState<Set<number>>(new Set());
 
   const refresh = useCallback(async () => {
     try {
@@ -91,6 +95,15 @@ export function CollectionPage({
     window.addEventListener("focus", onFocus);
     return () => window.removeEventListener("focus", onFocus);
   }, [refresh]);
+
+  function toggleWord(id: number) {
+    setExpandedWordIds((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
 
   async function removeWord(item: WordFavorite) {
     if (!window.confirm(`从生词本移除「${item.word}」？`)) return;
@@ -166,14 +179,16 @@ export function CollectionPage({
         <span className="pageNote">
           {wordTotal} 条词语 · {sentenceTotal} 条长难句 · 原文快照保存在本机
         </span>
-        <button
-          type="button"
-          className="ghostButton"
-          aria-label="刷新收藏"
-          onClick={() => void refresh()}
-        >
-          <RefreshCw size={14} /> 刷新
-        </button>
+        <div className="collectionActions">
+          <button
+            type="button"
+            className="ghostButton"
+            aria-label="刷新收藏"
+            onClick={() => void refresh()}
+          >
+            <RefreshCw size={14} /> 刷新
+          </button>
+        </div>
       </div>
 
       <div className="collectTabs" role="tablist" aria-label="收藏分类">
@@ -224,65 +239,89 @@ export function CollectionPage({
               </div>
             ) : (
               <div className="collectList">
-                {words.map((item) => (
-                  <article
-                    className="collectItem"
-                    key={item.id}
-                    aria-label={`词语收藏：${item.word}`}
-                  >
-                    <div className="collectHead">
-                      <h2>{item.word}</h2>
-                      <span className="collectBadge">
-                        下次复习 {item.dueDate ?? "待排程"}
-                      </span>
-                    </div>
-                    <div className="collectMetaLine">
-                      来源：{item.articleTitle} · {rangeLabel(item.paragraphStart, item.paragraphEnd)}
-                      {item.forgottenCount > 0 &&
-                        ` · 历史忘记 ${item.forgottenCount} 次`}
-                    </div>
-                    <blockquote className="selectionQuote">{item.sentence}</blockquote>
-                    <div className="collectMetaLine">
-                      {`规范化词形：${item.normalizedWord} · 规范化原句：${item.normalizedSentence}`}
-                    </div>
-                    <div className="collectMeaning">
-                      <span className="fieldLabel">语境义</span>
-                      <p>{item.contextualMeaning || "—"}</p>
-                      <span className="fieldLabel">常见义</span>
-                      <p>{item.commonMeaning || "—"}</p>
-                      {item.forms.length > 0 && (
-                        <>
-                          <span className="fieldLabel">词形</span>
-                          <p className="wordForms">{item.forms.join("；")}</p>
-                        </>
+                {words.map((item) => {
+                  const expanded = expandedWordIds.has(item.id);
+                  const detailsId = `word-favorite-details-${item.id}`;
+                  return (
+                    <article
+                      className="collectItem wordCollectItem"
+                      key={item.id}
+                      aria-label={`词语收藏：${item.word}`}
+                    >
+                      <button
+                        type="button"
+                        className="wordSummary"
+                        aria-expanded={expanded}
+                        aria-controls={detailsId}
+                        aria-label={`${expanded ? "收起" : "展开"}词语 ${item.word}`}
+                        onClick={() => toggleWord(item.id)}
+                      >
+                        <span className="wordSummaryMain">
+                          <span className="wordSummaryWord">{item.word}</span>
+                          <span className="wordSummaryPos">
+                            {item.partOfSpeech || "—"}
+                          </span>
+                          <span className="wordSummaryMeaning">
+                            {firstCommonMeaning(item.commonMeaning) || "—"}
+                          </span>
+                        </span>
+                        {expanded ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+                      </button>
+                      {expanded && (
+                        <div className="wordDetails" id={detailsId}>
+                          <div className="collectMetaLine wordReviewMeta">
+                            下次复习 {item.dueDate ?? "待排程"}
+                            {item.forgottenCount > 0 &&
+                              ` · 历史忘记 ${item.forgottenCount} 次`}
+                          </div>
+                          <div className="collectMetaLine">
+                            来源：{item.articleTitle} · {rangeLabel(item.paragraphStart, item.paragraphEnd)}
+                          </div>
+                          <blockquote className="selectionQuote">{item.sentence}</blockquote>
+                          <div className="collectMetaLine">
+                            {`规范化词形：${item.normalizedWord} · 规范化原句：${item.normalizedSentence}`}
+                          </div>
+                          <div className="collectMeaning">
+                            <span className="fieldLabel">语境义</span>
+                            <p>{item.contextualMeaning || "—"}</p>
+                            <span className="fieldLabel">常见义</span>
+                            <p>{item.commonMeaning || "—"}</p>
+                            {item.forms.length > 0 && (
+                              <>
+                                <span className="fieldLabel">词形</span>
+                                <p className="wordForms">{item.forms.join("；")}</p>
+                              </>
+                            )}
+                          </div>
+                          <div className="collectFoot">
+                            <button
+                              type="button"
+                              disabled={item.articleId === null}
+                              onClick={() =>
+                                item.articleId !== null &&
+                                onOpenArticle(
+                                  item.articleId,
+                                  item.paragraphStart,
+                                  item.paragraphEnd,
+                                )
+                              }
+                            >
+                              <BookOpen size={14} /> 回看原文
+                            </button>
+                            <button
+                              type="button"
+                              className="danger"
+                              aria-label={`移除词语 ${item.word}`}
+                              onClick={() => void removeWord(item)}
+                            >
+                              <Trash2 size={14} /> 移除
+                            </button>
+                          </div>
+                        </div>
                       )}
-                    </div>
-                    <div className="collectFoot">
-                      <button
-                        type="button"
-                        disabled={item.articleId === null}
-                        onClick={() =>
-                          item.articleId !== null &&
-                          onOpenArticle(
-                            item.articleId,
-                            item.paragraphStart,
-                            item.paragraphEnd,
-                          )
-                        }
-                      >
-                        <BookOpen size={14} /> 回看原文
-                      </button>
-                      <button
-                        type="button"
-                        className="danger"
-                        aria-label={`移除词语 ${item.word}`}
-                        onClick={() => void removeWord(item)}
-                      >
-                        <Trash2 size={14} /> 移除
-                      </button>
-                    </div>
-                  </article>
-                ))}
+                    </article>
+                  );
+                })}
               </div>
             )
           ) : sentences.length === 0 ? (

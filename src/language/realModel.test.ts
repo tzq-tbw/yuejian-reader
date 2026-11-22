@@ -17,21 +17,6 @@ interface Recorded {
   raw: unknown;
 }
 
-function responseSample(raw: unknown) {
-  if (raw === null || typeof raw !== "object") return raw;
-  const record = raw as Record<string, unknown>;
-  const choices = Array.isArray(record.choices) ? record.choices : [];
-  const choice = (choices[0] ?? {}) as Record<string, unknown>;
-  const message = (choice.message ?? {}) as Record<string, unknown>;
-  return {
-    id: record.id,
-    model: record.model,
-    content: message.content,
-    finishReason: choice.finish_reason,
-    usage: record.usage,
-  };
-}
-
 describe.skipIf(!enabled)("真实 Magpie 模型联调", () => {
   it("词卡、翻译、句法解析各调用一次", async () => {
     const records: Recorded[] = [];
@@ -99,17 +84,6 @@ describe.skipIf(!enabled)("真实 Magpie 模型联调", () => {
       paragraphs: [{ index: 0, text: analysisSentence }],
       articleTitle: "The City at Walking Speed",
     });
-
-    for (const record of records) {
-      console.log(`\n=== ${record.label} · 原始响应 ===`);
-      console.log(JSON.stringify(responseSample(record.raw), null, 2));
-    }
-    console.log("\n=== 词卡 · 解析结果 ===");
-    console.log(JSON.stringify(word, null, 2));
-    console.log("\n=== 翻译 · 解析结果 ===");
-    console.log(JSON.stringify(translation, null, 2));
-    console.log("\n=== 解析 · 解析结果 ===");
-    console.log(JSON.stringify(analysis, null, 2));
 
     expect(records).toHaveLength(3);
     expect(word.contextualMeaning).toBeTruthy();

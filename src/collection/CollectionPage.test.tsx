@@ -12,6 +12,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 const language: LanguageService = {
@@ -75,8 +76,9 @@ describe("收藏页", () => {
     await screen.findAllByText("我的阅读");
     await user.click(screen.getByRole("button", { name: "收藏" }));
     await screen.findByRole("heading", { name: "收藏" });
+    await user.click(screen.getByRole("button", { name: "展开词语 address" }));
 
-    // 生词本展示词形、原句、语境义和来源
+    // 生词本展开后展示词形、原句、语境义和来源
     expect(screen.getByText("address")).toBeInTheDocument();
     expect(
       screen.getByText("We need to address the problem before the meeting."),
@@ -118,10 +120,83 @@ describe("收藏页", () => {
 
     // 逐条移除词语，活动队列同步清空
     await user.click(screen.getByRole("tab", { name: /生词本/ }));
+    await user.click(screen.getByRole("button", { name: "展开词语 address" }));
     await user.click(screen.getByRole("button", { name: "移除词语 address" }));
     expect(await screen.findByText("生词本还是空的")).toBeInTheDocument();
     expect(await api.listWordFavorites(localDateKey())).toEqual([]);
     expect(await api.listDueWordFavorites(localDateKey())).toEqual([]);
+  });
+
+  it("生词默认折叠、点击展开收起", async () => {
+    const api = createMockApi(createMemoryStorage());
+    const article = await api.pasteArticle({
+      title: "Export Source",
+      text: "We need to address the problem.\n\nThis is a brief summary.",
+    });
+    await api.addWordFavorite({
+      word: "address",
+      sentence: "We need to address the problem.",
+      articleId: article.id,
+      paragraphStart: 0,
+      paragraphEnd: 0,
+      contextualMeaning: "着手处理",
+      commonMeaning: "地址；演说",
+      partOfSpeech: "v.",
+      today: localDateKey(),
+    });
+    await api.addWordFavorite({
+      word: 'brief, "summary"',
+      sentence: "This is a brief summary.",
+      articleId: article.id,
+      paragraphStart: 1,
+      paragraphEnd: 1,
+      contextualMeaning: "不应导出的语境义",
+      commonMeaning: "简短, 概要；“摘要”",
+      partOfSpeech: "n.",
+      today: localDateKey(),
+    });
+    await api.addLongSentenceFavorite({
+      sourceText: "LONG SENTENCE MUST NOT EXPORT",
+      translation: "不应导出的长难句",
+      articleId: article.id,
+      paragraphStart: 0,
+      paragraphEnd: 0,
+    });
+
+    const user = userEvent.setup();
+    render(<App api={api} language={language} />);
+    await screen.findAllByText("我的阅读");
+    await user.click(screen.getByRole("button", { name: "收藏" }));
+    const addressSummary = await screen.findByRole("button", {
+      name: "展开词语 address",
+    });
+    const otherSummary = screen.getByRole("button", {
+      name: '展开词语 brief, "summary"',
+    });
+
+    expect(addressSummary).toHaveAttribute("aria-expanded", "false");
+    expect(otherSummary).toHaveAttribute("aria-expanded", "false");
+    expect(screen.getByText("v.")).toBeInTheDocument();
+    expect(screen.getByText("地址")).toBeInTheDocument();
+    expect(screen.queryByText("We need to address the problem.")).not.toBeInTheDocument();
+    expect(screen.queryByText("着手处理")).not.toBeInTheDocument();
+    expect(screen.queryByText(/来源：Export Source/)).not.toBeInTheDocument();
+
+    await user.click(addressSummary);
+    const expandedAddress = screen.getByRole("button", { name: "收起词语 address" });
+    expect(expandedAddress).toHaveAttribute("aria-expanded", "true");
+    expect(otherSummary).toHaveAttribute("aria-expanded", "false");
+    expect(screen.getByText("We need to address the problem.")).toBeInTheDocument();
+    expect(screen.getByText("着手处理")).toBeInTheDocument();
+    expect(screen.getByText(/来源：Export Source · 第 1 段/)).toBeInTheDocument();
+    expect(document.getElementById(expandedAddress.getAttribute("aria-controls")!))
+      .toHaveTextContent("规范化词形：address");
+
+    await user.click(expandedAddress);
+    expect(screen.getByRole("button", { name: "展开词语 address" }))
+      .toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByText("着手处理")).not.toBeInTheDocument();
+
   });
 
   it("来源段落已删除时回到文章开头，收藏快照仍可查看", async () => {
@@ -154,7 +229,10 @@ describe("收藏页", () => {
     render(<App api={api} language={language} />);
     await screen.findAllByText("我的阅读");
     await user.click(screen.getByRole("button", { name: "收藏" }));
-    await user.click(await screen.findByRole("button", { name: "回看原文" }));
+    await user.click(
+      await screen.findByRole("button", { name: "展开词语 original" }),
+    );
+    await user.click(screen.getByRole("button", { name: "回看原文" }));
 
     await waitFor(() => {
       expect(document.querySelector('p[data-i="0"]')).toHaveTextContent(
@@ -164,7 +242,10 @@ describe("收藏页", () => {
     expect(document.querySelector<HTMLElement>(".paper")?.scrollTop).toBe(0);
     expect(scrollIntoView).not.toHaveBeenCalled();
     await user.click(screen.getByRole("button", { name: "收藏" }));
-    expect(await screen.findByText("Original second paragraph.")).toBeInTheDocument();
+    await user.click(
+      await screen.findByRole("button", { name: "展开词语 original" }),
+    );
+    expect(screen.getByText("Original second paragraph.")).toBeInTheDocument();
     expect(screen.getByText("原来的")).toBeInTheDocument();
   });
 });

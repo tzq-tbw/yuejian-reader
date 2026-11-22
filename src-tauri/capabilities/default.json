@@ -3,5 +3,13 @@
   "identifier": "default",
   "description": "阅间主窗口的默认权限",
   "windows": ["main"],
-  "permissions": ["core:default"]
+  "permissions": [
+    "core:default",
+    "dialog:default",
+    "dialog:allow-open",
+    "dialog:allow-save",
+    "fs:default",
+    "fs:allow-read-text-file",
+    "fs:allow-write-text-file"
+  ]
 }

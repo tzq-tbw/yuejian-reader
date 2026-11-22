@@ -9,6 +9,7 @@ import {
   type ImportArticleInput,
   type ImportSuiteInput,
   type ImportSuiteResult,
+  type ImportWordlistInput,
   type LibraryGroup,
   type LongSentenceFavorite,
   type ReaderApi,
@@ -17,6 +18,8 @@ import {
   type Section,
   type UpdateArticleInput,
   type WordFavorite,
+  type WordlistSummary,
+  type WordlistWords,
   UNCATEGORIZED,
 } from "./types";
 import {
@@ -28,8 +31,14 @@ import { normalizeCollectionKey } from "../collection/normalize";
 import {
   initialSchedule,
   isValidLocalDate,
+  localDateKey,
   nextSchedule,
 } from "../review/schedule";
+import { CET4_WORDS } from "../language/wordlists/cet4";
+import { CET6_WORDS } from "../language/wordlists/cet6";
+import { POSTGRADUATE_WORDS } from "../language/wordlists/postgraduate";
+import { parseWordlist } from "../language/wordlistImport";
+import { wordFavoritesCsv } from "../collection/wordExport";
 
 /**
  * 浏览器预览/测试用的内存实现，数据写入 localStorage。
@@ -118,6 +127,16 @@ interface MockReviewEvent {
   createdAt: string;
 }
 
+interface MockWordlist {
+  id: string;
+  name: string;
+  source: string;
+  enabled: boolean;
+  builtIn: boolean;
+  createdAt: string;
+  words: string[];
+}
+
 interface MockState {
   nextArticleId: number;
   nextSuiteId: number;
@@ -132,6 +151,7 @@ interface MockState {
   longSentences: MockLongSentence[];
   schedules: MockSchedule[];
   reviewEvents: MockReviewEvent[];
+  wordlists: MockWordlist[];
 }
 
 const STORAGE_KEY = "yuejian.browser.db";
@@ -169,6 +189,35 @@ function defaultState(): MockState {
     longSentences: [],
     schedules: [],
     reviewEvents: [],
+    wordlists: [
+      {
+        id: "cet4",
+        name: "四级高频",
+        source: "ECDICT · cet4 · 高频前 1600 词",
+        enabled: true,
+        builtIn: true,
+        createdAt: now,
+        words: [...CET4_WORDS],
+      },
+      {
+        id: "cet6",
+        name: "六级高频",
+        source: "ECDICT · cet6 · 高频前 1600 词",
+        enabled: true,
+        builtIn: true,
+        createdAt: now,
+        words: [...CET6_WORDS],
+      },
+      {
+        id: "ky",
+        name: "考研高频",
+        source: "ECDICT · 考研标签 · 高频前 1600 词",
+        enabled: true,
+        builtIn: true,
+        createdAt: now,
+        words: [...POSTGRADUATE_WORDS],
+      },
+    ],
   };
 }
 
@@ -244,6 +293,7 @@ export function createMockApi(storage: StorageLike = createMemoryStorage()): Rea
   state.longSentences = Array.isArray(state.longSentences) ? state.longSentences : [];
   state.schedules = Array.isArray(state.schedules) ? state.schedules : [];
   state.reviewEvents = Array.isArray(state.reviewEvents) ? state.reviewEvents : [];
+  state.wordlists = Array.isArray(state.wordlists) ? state.wordlists : defaultState().wordlists;
   const nextId = (rows: Array<{ id: number }>, stored: unknown) =>
     Math.max(
       typeof stored === "number" ? stored : 1,
@@ -849,6 +899,76 @@ export function createMockApi(storage: StorageLike = createMemoryStorage()): Rea
         dueDate: next.dueDate,
         recorded: true,
       } satisfies ReviewEventResult;
+    },
+
+    async exportWordFavorites() {
+      const words = await this.listWordFavorites(localDateKey());
+      return wordFavoritesCsv(words);
+    },
+
+    async backupDatabase(destination: string) {
+      const trimmed = destination.trim();
+      if (!trimmed) throw new Error("备份路径不能为空");
+      storage.setItem(`yuejian.browser.backup.${trimmed}`, JSON.stringify(state));
+      return trimmed;
+    },
+
+    async deleteAllData() {
+      state = {
+        ...defaultState(),
+        sections: [],
+        wordlists: [],
+      };
+      persist();
+    },
+
+    async listWordlists(): Promise<WordlistSummary[]> {
+      return state.wordlists.map(({ words, createdAt: _createdAt, ...list }) => ({
+        ...list,
+        wordCount: words.length,
+      }));
+    },
+
+    async listWords(listIds?: string[]): Promise<WordlistWords[]> {
+      if (listIds?.length === 0) return [];
+      const selected = listIds ? new Set(listIds) : null;
+      return state.wordlists
+        .filter((list) => list.enabled)
+        .filter((list) => !selected || selected.has(list.id))
+        .map((list) => ({ id: list.id, name: list.name, words: [...list.words] }));
+    },
+
+    async importWordlist(input: ImportWordlistInput): Promise<WordlistSummary> {
+      const name = input.name.trim();
+      if (!name) throw new Error("词表名称不能为空");
+      if ([...name].length > 60) throw new Error("词表名称不能超过 60 个字符");
+      const words = parseWordlist(input.content);
+      const list: MockWordlist = {
+        id: `custom-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`,
+        name,
+        source: input.source.trim() || "本地文件",
+        enabled: true,
+        builtIn: false,
+        createdAt: new Date().toISOString(),
+        words,
+      };
+      state.wordlists.push(list);
+      persist();
+      return {
+        id: list.id,
+        name: list.name,
+        source: list.source,
+        enabled: list.enabled,
+        builtIn: list.builtIn,
+        wordCount: list.words.length,
+      };
+    },
+
+    async deleteWordlist(id: string) {
+      const before = state.wordlists.length;
+      state.wordlists = state.wordlists.filter((list) => list.id !== id);
+      persist();
+      return state.wordlists.length < before;
     },
   };
 }

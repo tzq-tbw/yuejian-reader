@@ -1,16 +1,22 @@
 import { useEffect, useRef, useState, type MouseEvent } from "react";
 import {
   BookOpen,
-  Feather,
   FileText,
   Languages,
   PanelLeftOpen,
   PanelRightOpen,
   SquarePen,
 } from "lucide-react";
-import type { ArticleDetail } from "../data/types";
+import type { ArticleDetail, ReaderApi, WordlistSummary } from "../data/types";
 import { IconButton } from "../components/IconButton";
-import { tokenizeWithVocabulary } from "../language/vocabulary";
+import {
+  createVocabularyList,
+  tokenizeWithVocabulary,
+  type VocabularyList,
+} from "../language/vocabulary";
+import { VocabularySelector } from "./VocabularySelector";
+import { readWordlistSelection, writeWordlistSelection } from "./wordlistSelection";
+import { errorMessage } from "../utils/error";
 import {
   ArticleEditor,
   isDraftDirty,
@@ -21,6 +27,8 @@ import { SelectionToolbar } from "./SelectionToolbar";
 import { captureSelection, wordSelectionFromMark, type CapturedSelection } from "./selection";
 
 interface ReaderViewProps {
+  api: ReaderApi;
+  notify: (text: string, kind?: "info" | "error") => void;
   article: ArticleDetail | null;
   paragraphTarget: {
     articleId: number;
@@ -55,6 +63,8 @@ function pad(index: number) {
 }
 
 export function ReaderView({
+  api,
+  notify,
   article,
   paragraphTarget,
   sectionName,
@@ -80,9 +90,42 @@ export function ReaderView({
   onTranslateArticle,
 }: ReaderViewProps) {
   const paperRef = useRef<HTMLDivElement>(null);
-  const [markVocabulary, setMarkVocabulary] = useState(true);
+  const [availableLists, setAvailableLists] = useState<WordlistSummary[]>([]);
+  const [selectedListIds, setSelectedListIds] = useState<string[] | null>(null);
+  const [vocabularyLists, setVocabularyLists] = useState<VocabularyList[]>([]);
   const [toolbar, setToolbar] = useState<CapturedSelection | null>(null);
   const dirty = isDraftDirty(editor);
+
+  useEffect(() => {
+    let cancelled = false;
+    api.listWordlists().then((lists) => {
+      if (cancelled) return;
+      const enabled = lists.filter((list) => list.enabled);
+      setAvailableLists(enabled);
+      setSelectedListIds(readWordlistSelection(enabled.map((list) => list.id)));
+    }).catch((cause) => {
+      if (!cancelled) notify(`加载词表失败：${errorMessage(cause)}`, "error");
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [api, notify]);
+
+  useEffect(() => {
+    if (selectedListIds === null) return;
+    writeWordlistSelection(selectedListIds);
+    let cancelled = false;
+    setVocabularyLists([]);
+    api.listWords(selectedListIds).then((lists) => {
+      if (cancelled) return;
+      setVocabularyLists(lists.map((list) => createVocabularyList(list.id, list.name, list.words)));
+    }).catch((cause) => {
+      if (!cancelled) notify(`读取标色单词失败：${errorMessage(cause)}`, "error");
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [api, notify, selectedListIds]);
 
   useEffect(() => {
     if (editor || !paperRef.current) return;
@@ -160,15 +203,11 @@ export function ReaderView({
         <div>
           {article && !editor && (
             <>
-              <button
-                type="button"
-                className={`markToggle${markVocabulary ? " on" : ""}`}
-                aria-pressed={markVocabulary}
-                title="四级词汇标色开关"
-                onClick={() => setMarkVocabulary((current) => !current)}
-              >
-                <Feather size={15} /> 四级词汇
-              </button>
+              <VocabularySelector
+                lists={availableLists}
+                selectedIds={selectedListIds ?? []}
+                onChange={setSelectedListIds}
+              />
               <button type="button" onClick={onTranslateArticle} title="全文翻译">
                 <Languages size={15} /> 全文翻译
               </button>
@@ -236,8 +275,8 @@ export function ReaderView({
                   }}
                   onClick={askWordFromMark}
                 >
-                  {markVocabulary
-                    ? tokenizeWithVocabulary(paragraph).map((token, tokenIndex) =>
+                  {vocabularyLists.length > 0
+                    ? tokenizeWithVocabulary(paragraph, vocabularyLists).map((token, tokenIndex) =>
                         token.matches.length > 0 ? (
                           <mark
                             key={tokenIndex}

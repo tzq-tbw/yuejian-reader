@@ -44,7 +44,7 @@ function candidates(word: string): string[] {
   return [...forms];
 }
 
-function createVocabularyList(
+export function createVocabularyList(
   id: string,
   label: string,
   words: readonly string[],

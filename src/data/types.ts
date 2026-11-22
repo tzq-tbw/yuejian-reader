@@ -176,6 +176,27 @@ export interface ImportSuiteResult {
   articles: ArticleSummary[];
 }
 
+export interface WordlistSummary {
+  id: string;
+  name: string;
+  source: string;
+  enabled: boolean;
+  builtIn: boolean;
+  wordCount: number;
+}
+
+export interface WordlistWords {
+  id: string;
+  name: string;
+  words: string[];
+}
+
+export interface ImportWordlistInput {
+  name: string;
+  source: string;
+  content: string;
+}
+
 export interface ReaderApi {
   listSections(): Promise<Section[]>;
   createSection(name: string): Promise<Section>;
@@ -202,6 +223,14 @@ export interface ReaderApi {
   removeLongSentenceFavorite(id: number): Promise<boolean>;
   listDueWordFavorites(today: string): Promise<WordFavorite[]>;
   recordReviewEvent(input: ReviewEventInput): Promise<ReviewEventResult>;
+
+  exportWordFavorites(): Promise<string>;
+  backupDatabase(destination: string): Promise<string>;
+  deleteAllData(): Promise<void>;
+  listWordlists(): Promise<WordlistSummary[]>;
+  listWords(listIds?: string[]): Promise<WordlistWords[]>;
+  importWordlist(input: ImportWordlistInput): Promise<WordlistSummary>;
+  deleteWordlist(id: string): Promise<boolean>;
 }
 
 export const UNCATEGORIZED = "未分类";

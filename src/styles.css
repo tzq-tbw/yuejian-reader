@@ -187,8 +187,8 @@ body { margin: 0; }
 .toolbar > div { gap: 13px; min-width: 0; }
 .toolbar .crumbline { color: #46566c; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .toolbar .toolbarTitle { font-weight: 600; color: #34465e; }
-.toolbar button:not(.markToggle):not(.icon), .content button { border-radius: 9px; }
-.toolbar button:not(.markToggle):not(.icon) {
+.toolbar button:not(.markToggle):not(.icon):not([role="menuitemcheckbox"]), .content button { border-radius: 9px; }
+.toolbar button:not(.markToggle):not(.icon):not([role="menuitemcheckbox"]) {
   background: #2c65be;
   color: white;
   padding: 5px 12px;
@@ -890,6 +890,8 @@ footer span { margin-left: auto; }
 }
 .ghostButton:hover { background: #f1f5fb; }
 .libTop > .ghostButton { margin-left: auto; }
+.collectionActions { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+.collectionActions button:disabled { opacity: .5; cursor: default; }
 .collectTabs {
   display: flex;
   gap: 4px;
@@ -934,6 +936,46 @@ footer span { margin-left: auto; }
   border-radius: 12px;
   padding: 16px 18px;
 }
+.wordCollectItem { padding: 12px 18px; }
+.wordSummary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: #1d3552;
+  padding: 4px;
+  text-align: left;
+  font: inherit;
+}
+.wordSummary:hover { background: #f6f8fc; }
+.wordSummaryMain {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 7px 12px;
+  flex: 1;
+  min-width: 0;
+}
+.wordSummaryWord {
+  font: normal 24px/1.3 Georgia, serif;
+  letter-spacing: -.02em;
+  overflow-wrap: anywhere;
+}
+.wordSummaryPos {
+  flex: none;
+  border-radius: 5px;
+  background: #edf1f7;
+  color: #5b6f88;
+  padding: 1px 7px;
+  font-size: 11px;
+}
+.wordSummaryMeaning { color: #3c4d63; line-height: 1.6; }
+.wordSummary > svg { flex: none; color: #738195; }
+.wordDetails { margin-top: 10px; padding: 2px 4px 4px; border-top: 1px solid #eef2f7; }
+.wordReviewMeta { padding-top: 10px; }
 .collectHead {
   display: flex;
   align-items: center;
@@ -1193,3 +1235,98 @@ footer span { margin-left: auto; }
   .collectFoot, .sentenceNav { flex-wrap: wrap; }
 }
 .assistantMuted { color: #6b7c92; font-size: 13px; }
+/* R5 设置与数据管理 */
+.settingsInner { max-width: 980px; padding: 26px 30px 60px; }
+.settingsSection { border: 1px solid var(--line); border-radius: 13px; margin-bottom: 20px; background: #fff; overflow: hidden; }
+.settingsHeading { display: flex; align-items: flex-start; gap: 11px; padding: 19px 21px 15px; color: #315f9d; }
+.settingsHeading > div { flex: 1; }
+.settingsHeading h2 { margin: 0; color: #253c57; font-size: 17px; }
+.settingsHeading p { margin: 4px 0 0; color: var(--muted); font-size: 12px; }
+.settingsRows { border-top: 1px solid #edf0f5; }
+.settingsRow { display: flex; align-items: center; gap: 20px; padding: 16px 21px; border-bottom: 1px solid #edf0f5; }
+.settingsRow:last-child { border-bottom: 0; }
+.settingsRow > div { flex: 1; display: grid; gap: 4px; }
+.settingsRow strong { color: #34465c; }
+.settingsRow span { color: #718096; font-size: 12px; }
+.settingsRow > button, .wordlistImportActions > button { flex: none; display: inline-flex; align-items: center; gap: 6px; border: 1px solid #b8c9df; background: #fff; color: #285b9d; border-radius: 8px; padding: 7px 11px; }
+.settingsRow > button.danger, .settingsRow .danger { color: #b43b3b; border-color: #e2bcbc; }
+.settingsRow button:disabled, .wordlistImportActions button:disabled { opacity: .55; cursor: default; }
+.dangerRow { background: #fffafa; }
+.wordlistImportActions { display: flex; flex-wrap: wrap; gap: 9px; padding: 0 21px 17px; }
+.wordlistTable { border-top: 1px solid #edf0f5; }
+.wordlistRow { display: grid; grid-template-columns: minmax(180px, 1fr) 85px 78px 72px 32px; align-items: center; gap: 12px; padding: 13px 21px; border-bottom: 1px solid #edf0f5; color: #637289; font-size: 12px; }
+.wordlistRow:last-child { border-bottom: 0; }
+.wordlistName { display: grid; gap: 3px; min-width: 0; }
+.wordlistName strong { color: #2d415b; font-size: 14px; }
+.wordlistName span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.enabledLabel { display: inline-flex; align-items: center; gap: 3px; color: #28745d; }
+.wordlistOrigin { color: #75849a; }
+.wordlistRow .danger { color: #b43b3b; }
+.settingsEmpty { padding: 25px 21px; border-top: 1px solid #edf0f5; color: var(--muted); }
+.dialogField { display: grid; gap: 7px; margin: 17px 0; color: #53657c; }
+.dialogField input { border: 1px solid #c7d3e2; border-radius: 8px; padding: 8px 10px; font: inherit; }
+.dialogHint { color: var(--muted); font-size: 12px; }
+.dialogActions { display: flex; justify-content: flex-end; gap: 9px; margin-top: 18px; }
+.dialogActions button { border: 1px solid #bdcadb; border-radius: 8px; padding: 7px 13px; background: #fff; color: #3d5675; }
+.dialogActions button.primary { background: #2c65be; color: #fff; border-color: #2c65be; }
+.dialogActions button.danger { background: #b43b3b; color: #fff; border-color: #b43b3b; }
+@media (max-width: 850px) {
+  .settingsRow { align-items: flex-start; flex-direction: column; gap: 10px; }
+  .wordlistRow { grid-template-columns: minmax(150px, 1fr) 65px 70px 32px; }
+  .wordlistOrigin { display: none; }
+}
+
+/* R5 阅读页词表多选 */
+.vocabularySelector { position: relative; }
+.toolbar .vocabularySelector > .markToggle { display: flex; align-items: center; gap: 5px; }
+.vocabularySelector > .markToggle > span { min-width: 17px; padding: 0 4px; border-radius: 8px; background: #dce8f8; text-align: center; font-size: 10px; }
+.vocabularyMenu { position: absolute; z-index: 20; top: calc(100% + 9px); right: 0; width: 240px; padding: 7px; border: 1px solid #d5dfeb; border-radius: 11px; background: #fff; box-shadow: 0 10px 30px #16325326; }
+.vocabularyMenuTitle { padding: 7px 9px 9px; color: #738299; font-size: 11px; }
+.vocabularyMenu > p { margin: 8px; color: var(--muted); font-size: 12px; }
+.toolbar .vocabularyMenu button.vocabMenuItem { display: flex; width: 100%; align-items: center; gap: 9px; padding: 9px; border: 0; border-radius: 7px; background: #fff; color: #334b69; text-align: left; }
+.toolbar .vocabularyMenu button.vocabMenuItem:hover, .toolbar .vocabularyMenu button.vocabMenuItem[aria-checked="true"] { background: #edf3fc; color: #334b69; }
+.vocabularyMenu button > span:last-child { display: grid; flex: 1; gap: 1px; }
+.vocabularyMenu button small { color: #7b899d; font-size: 10px; }
+.wordlistCheck { display: inline-grid; place-items: center; width: 18px; height: 18px; flex: none; border: 1px solid #b8c6d9; border-radius: 5px; color: #fff; }
+.wordlistCheck.checked { border-color: #2c65be; background: #2c65be; }
+
+/* R5 作文批改 */
+.essayInner { max-width: 940px; padding: 26px 30px 60px; }
+.essayComposer, .essayResults { border: 1px solid var(--line); border-radius: 13px; background: #fff; overflow: hidden; }
+.essaySectionHead, .essayResultTitle { display: flex; align-items: center; justify-content: space-between; padding: 15px 19px; border-bottom: 1px solid #edf0f5; }
+.essaySectionHead > div, .essayResultTitle > div { display: flex; align-items: center; gap: 8px; color: #315f9d; }
+.essaySectionHead h2, .essayResultTitle h2 { margin: 0; color: #2a405b; font-size: 17px; }
+.essaySectionHead button, .essayResultTitle button { display: inline-flex; align-items: center; gap: 5px; border: 1px solid #bdcadb; border-radius: 8px; background: #fff; color: #315f9d; padding: 6px 10px; }
+.essayComposer textarea { display: block; width: 100%; min-height: 250px; resize: vertical; border: 0; padding: 20px; color: #263b54; font: 18px/1.7 Georgia, "Times New Roman", serif; }
+.essayComposer textarea:focus { outline: 0; box-shadow: inset 0 0 0 2px #8caedb; }
+.essayComposerFoot { display: flex; align-items: center; justify-content: space-between; padding: 12px 19px; border-top: 1px solid #edf0f5; color: #7b899c; font-size: 12px; }
+.essayComposerFoot button { display: inline-flex; align-items: center; gap: 6px; border: 1px solid #2c65be; border-radius: 8px; background: #2c65be; color: #fff; padding: 7px 13px; }
+.essayComposerFoot button:disabled { opacity: .55; cursor: default; }
+.essayError { margin: 0; padding: 10px 19px; background: #fff2f2; color: #ad3636; }
+.essayLoading { margin-top: 18px; padding: 20px; border: 1px solid #dbe5f2; border-radius: 12px; background: #f5f8fc; color: #5d718b; text-align: center; }
+.essayResults { margin-top: 20px; }
+.essayResultTitle > div > span { color: #7a889b; font-size: 12px; }
+.essayNoIssues { margin: 0; padding: 18px 20px; color: #347561; }
+.essayIssueSection { padding: 18px 20px; border-bottom: 1px solid #e7ecf3; }
+.essayIssueHeading { display: flex; align-items: center; gap: 9px; margin-bottom: 12px; }
+.essayIssueHeading h3 { margin: 0; color: #3b4f67; font-size: 16px; }
+.essayIssueHeading span { flex: 1; color: #7a889b; font-size: 11px; }
+.essayIssueHeading em { min-width: 22px; border-radius: 11px; background: #edf2f8; color: #526a87; font-style: normal; text-align: center; }
+.essayIssueSection.high .essayIssueHeading h3 { color: #a83a3a; }
+.essayIssueSection.medium .essayIssueHeading h3 { color: #9a641f; }
+.essayIssue { padding: 13px 15px; margin-top: 10px; border: 1px solid #e2e8f0; border-radius: 9px; background: #fafbfd; }
+.essayIssueMeta { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.essayIssueMeta span { padding: 2px 7px; border-radius: 5px; background: #e7eef8; color: #365e91; font-size: 11px; }
+.essayIssueMeta strong { color: #6c7d92; font-size: 12px; font-weight: 500; }
+.essayCorrection { display: grid; grid-template-columns: 42px 1fr; gap: 9px; margin: 6px 0; color: #6a7788; }
+.essayCorrection > span { font-size: 11px; padding-top: 3px; }
+.essayCorrection del, .essayCorrection ins { font: 16px/1.55 Georgia, serif; text-decoration-color: #b85656; overflow-wrap: anywhere; }
+.essayCorrection.suggestion ins { color: #216a53; text-decoration: none; }
+.essayIssue > p { margin: 10px 0 0 51px; color: #52647a; font-size: 13px; }
+.essayPolished { padding: 20px; }
+.essayPolished h3 { margin: 0 0 12px; color: #2c4d70; font-size: 17px; }
+.essayPolished p { margin: 0; white-space: pre-wrap; color: #293e57; font: 18px/1.75 Georgia, serif; }
+@media (max-width: 760px) {
+  .essayInner, .settingsInner { padding: 18px 14px 45px; }
+  .essayIssueHeading span { display: none; }
+}

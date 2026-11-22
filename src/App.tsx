@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { App as KonstaApp } from "konsta/react";
-import { BookOpen, Bookmark, CalendarCheck, LibraryBig } from "lucide-react";
+import { BookOpen, Bookmark, CalendarCheck, LibraryBig, PenLine, Settings } from "lucide-react";
 import type {
   ArticleDetail,
   ArticleSummary,
@@ -24,6 +24,10 @@ import { ReaderView } from "./reader/ReaderView";
 import { Inspector } from "./reader/Inspector";
 import { CollectionPage } from "./collection/CollectionPage";
 import { ReviewPage } from "./review/ReviewPage";
+import { SettingsPage } from "./settings/SettingsPage";
+import { EssayPage } from "./essay/EssayPage";
+import { createEssayService } from "./essay/service";
+import type { EssayService, EssaySession } from "./essay/types";
 import type { ReviewCoach } from "./review/coach";
 import type {
   CollectLongSentenceInput,
@@ -42,13 +46,15 @@ import type { ArticleDraft } from "./components/ArticleDraftFields";
 const UI_KEY = "yuejian.ui";
 const LAST_KEY = "yuejian.last";
 
-type AppView = "reader" | "library" | "collection" | "review";
+type AppView = "reader" | "library" | "collection" | "review" | "essay" | "settings";
 
 const VIEW_LABELS: Record<AppView, string> = {
   reader: "阅读工作台",
   library: "资料库",
   collection: "收藏",
   review: "复习",
+  essay: "作文批改",
+  settings: "设置",
 };
 
 interface WorkspaceData {
@@ -99,10 +105,12 @@ export function App({
   api = getApi(),
   language,
   coach,
+  essayService,
 }: {
   api?: ReaderApi;
   language?: LanguageService;
   coach?: ReviewCoach;
+  essayService?: EssayService;
 }) {
   const [sections, setSections] = useState<Section[]>([]);
   const [articlesBySection, setArticlesBySection] = useState<
@@ -140,6 +148,8 @@ export function App({
     returnFocus: HTMLElement | null;
   } | null>(null);
   const [builtinLanguage] = useState(() => createLanguageService());
+  const [builtinEssayService] = useState(() => createEssayService());
+  const [essaySession, setEssaySession] = useState<EssaySession>({ text: "", result: null });
   const languageService = language ?? builtinLanguage;
   const assistant = useReadingAssistant(currentArticle, languageService);
   const openAssistantSide = () => setSideOpen(true);
@@ -621,6 +631,26 @@ export function App({
               <CalendarCheck />
               <small>复习</small>
             </button>
+            <button
+              type="button"
+              className={`navbtn${view === "essay" ? " current" : ""}`}
+              title="作文批改"
+              aria-current={view === "essay" ? "page" : undefined}
+              onClick={() => void navigate("essay")}
+            >
+              <PenLine />
+              <small>作文批改</small>
+            </button>
+            <button
+              type="button"
+              className={`navbtn${view === "settings" ? " current" : ""}`}
+              title="设置"
+              aria-current={view === "settings" ? "page" : undefined}
+              onClick={() => void navigate("settings")}
+            >
+              <Settings />
+              <small>设置</small>
+            </button>
           </nav>
 
           {view === "reader" && listOpen && (
@@ -668,6 +698,8 @@ export function App({
               </main>
             ) : (
               <ReaderView
+                api={api}
+                notify={notify}
                 article={currentArticle}
                 paragraphTarget={paragraphTarget}
                 sectionName={
@@ -739,7 +771,7 @@ export function App({
               }
               notify={notify}
             />
-          ) : (
+          ) : view === "review" ? (
             <ReviewPage
               api={api}
               language={languageService}
@@ -748,6 +780,28 @@ export function App({
                 void openArticleFromLibrary(articleId, paragraphStart, paragraphEnd)
               }
               notify={notify}
+            />
+          ) : view === "essay" ? (
+            <EssayPage
+              service={essayService ?? builtinEssayService}
+              session={essaySession}
+              onSessionChange={setEssaySession}
+            />
+          ) : (
+            <SettingsPage
+              api={api}
+              notify={notify}
+              onDataDeleted={() => {
+                setSections([]);
+                setArticlesBySection({});
+                setLibraryGroups([]);
+                setExpanded(new Set());
+                setCurrentSectionId(null);
+                setCurrentArticle(null);
+                setParagraphTarget(null);
+                setEditor(null);
+                writeJson(LAST_KEY, { sectionId: null, articleId: null });
+              }}
             />
           )}
 

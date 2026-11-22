@@ -9,6 +9,7 @@ import type {
   FillLongSentenceInput,
   ImportSuiteInput,
   ImportSuiteResult,
+  ImportWordlistInput,
   LibraryGroup,
   LongSentenceFavorite,
   ReaderApi,
@@ -17,6 +18,8 @@ import type {
   Section,
   UpdateArticleInput,
   WordFavorite,
+  WordlistSummary,
+  WordlistWords,
 } from "./types";
 
 /** 桌面端实现：全部读写经 Rust 命令进入 SQLite。 */
@@ -58,4 +61,14 @@ export const tauriApi: ReaderApi = {
     invoke<WordFavorite[]>("list_due_word_favorites", { today }),
   recordReviewEvent: (input: ReviewEventInput) =>
     invoke<ReviewEventResult>("record_review_event", { input }),
+
+  exportWordFavorites: () => invoke<string>("export_word_favorites"),
+  backupDatabase: (destination) =>
+    invoke<string>("backup_database", { destination }),
+  deleteAllData: () => invoke<void>("delete_all_data"),
+  listWordlists: () => invoke<WordlistSummary[]>("list_wordlists"),
+  listWords: (listIds) => invoke<WordlistWords[]>("list_words", { listIds: listIds ?? null }),
+  importWordlist: (input: ImportWordlistInput) =>
+    invoke<WordlistSummary>("import_wordlist", { input }),
+  deleteWordlist: (id) => invoke<boolean>("delete_wordlist", { id }),
 };

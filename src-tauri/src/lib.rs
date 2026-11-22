@@ -1,5 +1,7 @@
 mod db;
 mod review;
+mod settings;
+mod wordlists;
 
 use db::{
     AddLongSentenceInput, AddWordFavoriteInput, AddResult, ArticleDetail, ArticleSummary,
@@ -9,6 +11,7 @@ use db::{
 };
 use std::sync::Mutex;
 use tauri::{Manager, State};
+use wordlists::{ImportWordlistInput, WordlistSummary, WordlistWords};
 
 pub struct DbState(pub Mutex<rusqlite::Connection>);
 
@@ -277,9 +280,52 @@ fn record_review_event(
     with_conn(&state, |conn| db::record_review_event(conn, &input))
 }
 
+#[tauri::command]
+fn export_word_favorites(state: State<'_, DbState>) -> Result<String, String> {
+    with_conn(&state, |conn| settings::export_word_favorites_csv(conn))
+}
+
+#[tauri::command]
+fn backup_database(state: State<'_, DbState>, destination: String) -> Result<String, String> {
+    with_conn(&state, |conn| settings::backup_database(conn, &destination))
+}
+
+#[tauri::command]
+fn delete_all_data(state: State<'_, DbState>) -> Result<(), String> {
+    with_conn(&state, |conn| settings::delete_all_data(conn))
+}
+
+#[tauri::command]
+fn list_wordlists(state: State<'_, DbState>) -> Result<Vec<WordlistSummary>, String> {
+    with_conn(&state, |conn| wordlists::list_wordlists(conn))
+}
+
+#[tauri::command]
+fn list_words(
+    state: State<'_, DbState>,
+    list_ids: Option<Vec<String>>,
+) -> Result<Vec<WordlistWords>, String> {
+    with_conn(&state, |conn| wordlists::list_words(conn, list_ids))
+}
+
+#[tauri::command]
+fn import_wordlist(
+    state: State<'_, DbState>,
+    input: ImportWordlistInput,
+) -> Result<WordlistSummary, String> {
+    with_conn(&state, |conn| wordlists::import_wordlist(conn, input))
+}
+
+#[tauri::command]
+fn delete_wordlist(state: State<'_, DbState>, id: String) -> Result<bool, String> {
+    with_conn(&state, |conn| wordlists::delete_wordlist(conn, &id))
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_fs::init())
         .setup(|app| {
             let data_dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&data_dir)?;
@@ -310,6 +356,13 @@ pub fn run() {
             remove_long_sentence_favorite,
             list_due_word_favorites,
             record_review_event,
+            export_word_favorites,
+            backup_database,
+            delete_all_data,
+            list_wordlists,
+            list_words,
+            import_wordlist,
+            delete_wordlist,
             model_chat,
         ])
         .run(tauri::generate_context!())
