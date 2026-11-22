@@ -274,36 +274,54 @@ export function EssayPage({
               <div className="essayHistoryList">
                 {documents.map((document) => {
                   const expanded = expandedIds.has(document.id);
+                  const selected = document.id === selectedDocumentId;
                   return (
                     <div className="essayHistoryDocument" key={document.id}>
-                      <div className={`essayHistoryRow${document.id === selectedDocumentId ? " selected" : ""}`}>
-                        <button
-                          type="button"
-                          className="essaySequence"
-                          aria-label={`选择作文 ${document.sequenceNo}`}
-                          title={document.name}
-                          disabled={busy}
-                          onClick={() => openDocument(document)}
-                        >
-                          {document.sequenceNo}
-                        </button>
-                        <button
-                          type="button"
-                          className="icon"
-                          aria-label={`${expanded ? "收起" : "展开"}作文 ${document.sequenceNo} 的批改记录`}
-                          aria-expanded={expanded}
-                          onClick={() => setExpandedIds((current) => {
-                            const next = new Set(current);
-                            if (next.has(document.id)) next.delete(document.id);
-                            else next.add(document.id);
-                            return next;
-                          })}
-                        >
-                          {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                        </button>
-                        <button type="button" className="icon danger" aria-label={`删除作文 ${document.sequenceNo}`} disabled={busy} onClick={() => void deleteDocument(document)}>
-                          <Trash2 size={13} />
-                        </button>
+                      <div className={`essayHistoryRow${selected ? " selected" : ""}`}>
+                        {selected && renaming ? (
+                          <div className="essayRename">
+                            <input aria-label="修改区名称" value={renameDraft} maxLength={60} onChange={(event) => setRenameDraft(event.target.value)} />
+                            <button type="button" className="icon" aria-label="保存修改区名称" onClick={() => void renameDocument()}><Check size={15} /></button>
+                            <button type="button" className="icon" aria-label="取消重命名" onClick={() => setRenaming(false)}><X size={15} /></button>
+                          </div>
+                        ) : (
+                          <>
+                            <button
+                              type="button"
+                              className="essaySequence"
+                              aria-label={`选择作文 ${document.sequenceNo}`}
+                              title={document.name}
+                              disabled={busy}
+                              onClick={() => openDocument(document)}
+                            >
+                              {document.sequenceNo}
+                              {selected && <strong>{document.name}</strong>}
+                            </button>
+                            {selected && (
+                              <button type="button" className="icon" aria-label="重命名修改区" onClick={() => {
+                                setRenameDraft(document.name);
+                                setRenaming(true);
+                              }}><Pencil size={14} /></button>
+                            )}
+                            <button
+                              type="button"
+                              className="icon"
+                              aria-label={`${expanded ? "收起" : "展开"}作文 ${document.sequenceNo} 的批改记录`}
+                              aria-expanded={expanded}
+                              onClick={() => setExpandedIds((current) => {
+                                const next = new Set(current);
+                                if (next.has(document.id)) next.delete(document.id);
+                                else next.add(document.id);
+                                return next;
+                              })}
+                            >
+                              {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                            </button>
+                            <button type="button" className="icon danger" aria-label={`删除作文 ${document.sequenceNo}`} disabled={busy} onClick={() => void deleteDocument(document)}>
+                              <Trash2 size={13} />
+                            </button>
+                          </>
+                        )}
                       </div>
                       {expanded && (
                         <div className="essayRevisionList">
@@ -343,22 +361,10 @@ export function EssayPage({
               </div>
               <div className="essayDocumentBar">
                 {selectedDocument ? (
-                  renaming ? (
-                    <div className="essayRename">
-                      <input aria-label="修改区名称" value={renameDraft} maxLength={60} onChange={(event) => setRenameDraft(event.target.value)} />
-                      <button type="button" className="icon" aria-label="保存修改区名称" onClick={() => void renameDocument()}><Check size={15} /></button>
-                      <button type="button" className="icon" aria-label="取消重命名" onClick={() => setRenaming(false)}><X size={15} /></button>
-                    </div>
-                  ) : (
-                    <>
-                      <span>修改区 {selectedDocument.sequenceNo}</span>
-                      <strong>{selectedDocument.name}</strong>
-                      <button type="button" className="icon" aria-label="重命名修改区" onClick={() => {
-                        setRenameDraft(selectedDocument.name);
-                        setRenaming(true);
-                      }}><Pencil size={14} /></button>
-                    </>
-                  )
+                  <>
+                    <span>修改区 {selectedDocument.sequenceNo}</span>
+                    <strong>{selectedDocument.name}</strong>
+                  </>
                 ) : <span>新作文 · 首次批改后生成序号</span>}
               </div>
               <textarea

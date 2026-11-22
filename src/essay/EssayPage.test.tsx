@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
-import { act, render, screen } from "@testing-library/react";
+import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { App } from "../App";
 import { createMemoryStorage, createMockApi } from "../data/mock";
@@ -124,7 +124,7 @@ describe("作文批改页面", () => {
     expect(window.localStorage.getItem("yuejian.essay")).toBeNull();
   });
 
-  it("历史默认收起，同篇批改追加序号下并可重命名和恢复", async () => {
+  it("历史默认收起，同篇批改追加序号下并可在侧边栏重命名和恢复", async () => {
     const api = createMockApi(createMemoryStorage());
     const service = essayService();
     const user = userEvent.setup();
@@ -138,6 +138,8 @@ describe("作文批改页面", () => {
     await waitForRevisionCount(api, 2);
 
     await user.click(screen.getByRole("button", { name: "作文历史" }));
+    const history = screen.getByRole("complementary", { name: "作文历史" });
+    const composer = screen.getByRole("region", { name: "英语作文" });
     expect(screen.getByRole("button", { name: "选择作文 1" })).toHaveTextContent("1");
     expect(screen.queryByRole("button", { name: "第 1 次批改" })).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "展开作文 1 的批改记录" }));
@@ -146,12 +148,14 @@ describe("作文批改页面", () => {
     await user.click(screen.getByRole("button", { name: "收起作文 1 的批改记录" }));
     expect(screen.queryByRole("button", { name: "第 1 次批改" })).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "重命名修改区" }));
-    const name = screen.getByLabelText("修改区名称");
+    expect(within(composer).queryByRole("button", { name: "重命名修改区" })).not.toBeInTheDocument();
+    await user.click(within(history).getByRole("button", { name: "重命名修改区" }));
+    const name = within(history).getByLabelText("修改区名称");
+    expect(within(composer).queryByLabelText("修改区名称")).not.toBeInTheDocument();
     await user.clear(name);
     await user.type(name, "26四级作文");
-    await user.click(screen.getByRole("button", { name: "保存修改区名称" }));
-    expect(await screen.findByText("26四级作文")).toBeInTheDocument();
+    await user.click(within(history).getByRole("button", { name: "保存修改区名称" }));
+    expect(await within(history).findByText("26四级作文")).toBeInTheDocument();
     expect((await api.listEssayDocuments())[0].revisions).toHaveLength(2);
 
     view.unmount();
