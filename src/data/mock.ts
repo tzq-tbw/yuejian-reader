@@ -43,6 +43,7 @@ import type {
   AddEssayRevisionInput,
   CreateEssayDocumentInput,
   EssayDocument,
+  EssayDocumentSummary,
 } from "../essay/types";
 
 /**
@@ -343,9 +344,21 @@ export function createMockApi(storage: StorageLike = createMemoryStorage()): Rea
     return document;
   }
 
+  function essaySummaryView(document: EssayDocument): EssayDocumentSummary {
+    return {
+      id: document.id,
+      sequenceNo: document.sequenceNo,
+      name: document.name,
+      text: document.text,
+      revisionCount: document.revisions.length,
+      createdAt: document.createdAt,
+      updatedAt: document.updatedAt,
+    };
+  }
+
   function essayDocumentView(document: EssayDocument): EssayDocument {
     return {
-      ...document,
+      ...essaySummaryView(document),
       revisions: document.revisions.map((revision) => ({
         ...revision,
         result: {
@@ -1019,6 +1032,16 @@ export function createMockApi(storage: StorageLike = createMemoryStorage()): Rea
       state.wordlists = state.wordlists.filter((list) => list.id !== id);
       persist();
       return state.wordlists.length < before;
+    },
+
+    async listEssaySummaries() {
+      return [...state.essayDocuments]
+        .sort((a, b) => a.sequenceNo - b.sequenceNo)
+        .map(essaySummaryView);
+    },
+
+    async getEssayDocument(id: number) {
+      return essayDocumentView(essayDocumentById(id));
     },
 
     async listEssayDocuments() {

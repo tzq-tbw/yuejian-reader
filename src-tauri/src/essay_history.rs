@@ -14,11 +14,24 @@ pub struct EssayRevision {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct EssayDocumentSummary {
+    pub id: i64,
+    pub sequence_no: i64,
+    pub name: String,
+    pub text: String,
+    pub revision_count: i64,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct EssayDocument {
     pub id: i64,
     pub sequence_no: i64,
     pub name: String,
     pub text: String,
+    pub revision_count: i64,
     pub revisions: Vec<EssayRevision>,
     pub created_at: String,
     pub updated_at: String,
@@ -61,7 +74,7 @@ fn validate_name(name: &str) -> Result<String, String> {
     Ok(name.to_string())
 }
 
-fn get_document(conn: &Connection, id: i64) -> Result<EssayDocument, String> {
+pub fn get_essay_document(conn: &Connection, id: i64) -> Result<EssayDocument, String> {
     let (id, sequence_no, name, text, created_at, updated_at) = conn
         .query_row(
             "SELECT id, sequence_no, name, text, created_at, updated_at
@@ -134,7 +147,7 @@ pub fn list_essay_documents(conn: &Connection) -> Result<Vec<EssayDocument>, Str
         .map_err(|error| format!("读取作文列表失败：{error}"))?
         .collect::<Result<Vec<_>, _>>()
         .map_err(|error| format!("读取作文列表失败：{error}"))?;
-    ids.into_iter().map(|id| get_document(conn, id)).collect()
+    ids.into_iter().map(|id| get_essay_document(conn, id)).collect()
 }
 
 pub fn create_essay_document(
@@ -164,7 +177,7 @@ pub fn create_essay_document(
     let id = tx.last_insert_rowid();
     tx.commit()
         .map_err(|error| format!("提交作文失败：{error}"))?;
-    get_document(conn, id)
+    get_essay_document(conn, id)
 }
 
 pub fn rename_essay_document(
@@ -183,7 +196,7 @@ pub fn rename_essay_document(
     if changed == 0 {
         return Err("找不到这篇作文".to_string());
     }
-    get_document(conn, id)
+    get_essay_document(conn, id)
 }
 
 pub fn update_essay_text(conn: &Connection, id: i64, text: String) -> Result<EssayDocument, String> {
@@ -198,7 +211,7 @@ pub fn update_essay_text(conn: &Connection, id: i64, text: String) -> Result<Ess
     if changed == 0 {
         return Err("找不到这篇作文".to_string());
     }
-    get_document(conn, id)
+    get_essay_document(conn, id)
 }
 
 pub fn delete_essay_document(conn: &Connection, id: i64) -> Result<bool, String> {
@@ -251,7 +264,7 @@ pub fn add_essay_revision(
     let id = tx.last_insert_rowid();
     tx.commit()
         .map_err(|error| format!("提交批改结果失败：{error}"))?;
-    Ok(get_document(conn, input.document_id)?
+    Ok(get_essay_document(conn, input.document_id)?
         .revisions
         .into_iter()
         .find(|revision| revision.id == id)
@@ -316,7 +329,7 @@ mod tests {
         assert_eq!(renamed.text, "He goes to school every day.");
 
         assert!(delete_essay_revision(&conn, renamed.revisions[0].id).unwrap());
-        assert_eq!(get_document(&conn, document.id).unwrap().revisions.len(), 1);
+        assert_eq!(get_essay_document(&conn, document.id).unwrap().revisions.len(), 1);
         assert!(delete_essay_document(&conn, document.id).unwrap());
         let remaining: i64 = conn
             .query_row("SELECT COUNT(*) FROM essay_revisions WHERE document_id = ?1", params![document.id], |row| row.get(0))
@@ -338,7 +351,7 @@ mod tests {
             },
         )
         .is_err());
-        assert_eq!(get_document(&conn, document.id).unwrap().text, "Original essay.");
-        assert!(get_document(&conn, document.id).unwrap().revisions.is_empty());
+        assert_eq!(get_essay_document(&conn, document.id).unwrap().text, "Original essay.");
+        assert!(get_essay_document(&conn, document.id).unwrap().revisions.is_empty());
     }
 }

@@ -4,6 +4,7 @@ import type {
   AddEssayRevisionInput,
   CreateEssayDocumentInput,
   EssayDocument,
+  EssayDocumentSummary,
   EssayRevision,
 } from "../essay/types";
 
@@ -239,6 +240,8 @@ export interface ReaderApi {
   importWordlist(input: ImportWordlistInput): Promise<WordlistSummary>;
   deleteWordlist(id: string): Promise<boolean>;
 
+  listEssaySummaries(): Promise<EssayDocumentSummary[]>;
+  getEssayDocument(id: number): Promise<EssayDocument>;
   listEssayDocuments(): Promise<EssayDocument[]>;
   createEssayDocument(input: CreateEssayDocumentInput): Promise<EssayDocument>;
   renameEssayDocument(id: number, name: string): Promise<EssayDocument>;

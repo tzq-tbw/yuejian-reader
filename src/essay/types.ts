@@ -16,8 +16,10 @@ export interface EssayReview {
 }
 
 export interface EssaySession {
+  documentId: number | null;
   text: string;
   result: EssayReview | null;
+  dirty: boolean;
   pendingId?: number | null;
 }
 
@@ -34,14 +36,18 @@ export interface EssayRevision {
   createdAt: string;
 }
 
-export interface EssayDocument {
+export interface EssayDocumentSummary {
   id: number;
   sequenceNo: number;
   name: string;
   text: string;
-  revisions: EssayRevision[];
+  revisionCount: number;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface EssayDocument extends EssayDocumentSummary {
+  revisions: EssayRevision[];
 }
 
 export interface CreateEssayDocumentInput {
