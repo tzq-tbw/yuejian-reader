@@ -80,7 +80,9 @@ pub fn delete_all_data(conn: &mut Connection) -> Result<(), String> {
         .transaction()
         .map_err(|error| format!("开始清空数据失败：{error}"))?;
     tx.execute_batch(
-        "DELETE FROM review_events;
+        "DELETE FROM essay_revisions;
+         DELETE FROM essay_documents;
+         DELETE FROM review_events;
          DELETE FROM review_schedules;
          DELETE FROM word_favorites;
          DELETE FROM long_sentence_favorites;
@@ -172,6 +174,8 @@ mod tests {
         .unwrap();
         delete_all_data(&mut conn).unwrap();
         for table in [
+            "essay_revisions",
+            "essay_documents",
             "review_events",
             "review_schedules",
             "word_favorites",
@@ -195,6 +199,6 @@ mod tests {
                 row.get(0)
             })
             .unwrap();
-        assert_eq!(migrations, 5);
+        assert_eq!(migrations, 6);
     }
 }

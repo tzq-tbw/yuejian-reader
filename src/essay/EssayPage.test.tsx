@@ -7,6 +7,7 @@ import { createMemoryStorage, createMockApi } from "../data/mock";
 import { EssayPage } from "./EssayPage";
 import type { AppFileService } from "../data/files";
 import type { EssayReview, EssayService, EssaySession } from "./types";
+import type { ReaderApi } from "../data/types";
 
 const reviewResult: EssayReview = {
   issues: [{
@@ -32,9 +33,10 @@ function defer<T>() {
   return { promise, resolve };
 }
 
-function ImportHarness({ files }: { files: AppFileService }) {
+function ImportHarness({ files, api, service = essayService() }: { files?: AppFileService; api?: ReaderApi; service?: EssayService }) {
   const [session, setSession] = useState<EssaySession>({ text: "", result: null });
-  return <EssayPage service={essayService()} session={session} onSessionChange={setSession} files={files} />;
+  const [fallbackApi] = useState(() => createMockApi(createMemoryStorage()));
+  return <EssayPage api={api ?? fallbackApi} service={service} session={session} onSessionChange={setSession} files={files} />;
 }
 
 describe("作文批改页面", () => {
@@ -69,12 +71,14 @@ describe("作文批改页面", () => {
         .mockReturnValueOnce(second.promise),
     };
     const user = userEvent.setup();
+    const api = createMockApi(createMemoryStorage());
     let session: EssaySession = { text: "He go to school.", result: null };
     let generation = 0;
     let view!: ReturnType<typeof render>;
     const page = () => (
       <EssayPage
         key={generation}
+        api={api}
         service={service}
         session={session}
         onSessionChange={(update) => {
@@ -119,4 +123,47 @@ describe("作文批改页面", () => {
     expect(files.pickText).toHaveBeenCalledWith(["txt"]);
     expect(window.localStorage.getItem("yuejian.essay")).toBeNull();
   });
+
+  it("历史默认收起，同篇批改追加序号下并可重命名和恢复", async () => {
+    const api = createMockApi(createMemoryStorage());
+    const service = essayService();
+    const user = userEvent.setup();
+    const view = render(<ImportHarness api={api} service={service} />);
+    expect(screen.queryByRole("complementary", { name: "作文历史" })).not.toBeInTheDocument();
+
+    await user.type(screen.getByLabelText("作文正文"), "He go to school.");
+    await user.click(screen.getByRole("button", { name: "提交 AI 批改" }));
+    expect(await screen.findByText("He goes to school every day.")).toBeInTheDocument();
+    await user.click(screen.getAllByRole("button", { name: "重新批改" })[0]);
+    await waitForRevisionCount(api, 2);
+
+    await user.click(screen.getByRole("button", { name: "作文历史" }));
+    expect(screen.getByRole("button", { name: "选择作文 1" })).toHaveTextContent("1");
+    expect(screen.queryByRole("button", { name: "第 1 次批改" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "展开作文 1 的批改记录" }));
+    expect(screen.getByRole("button", { name: "第 1 次批改" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "第 2 次批改" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "收起作文 1 的批改记录" }));
+    expect(screen.queryByRole("button", { name: "第 1 次批改" })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "重命名修改区" }));
+    const name = screen.getByLabelText("修改区名称");
+    await user.clear(name);
+    await user.type(name, "26四级作文");
+    await user.click(screen.getByRole("button", { name: "保存修改区名称" }));
+    expect(await screen.findByText("26四级作文")).toBeInTheDocument();
+    expect((await api.listEssayDocuments())[0].revisions).toHaveLength(2);
+
+    view.unmount();
+    render(<ImportHarness api={api} service={service} />);
+    expect(await screen.findByText("26四级作文")).toBeInTheDocument();
+    expect(screen.getByLabelText("作文正文")).toHaveValue("He go to school.");
+    expect(await screen.findByText("He goes to school every day.")).toBeInTheDocument();
+  });
 });
+
+async function waitForRevisionCount(api: ReaderApi, count: number) {
+  await vi.waitFor(async () => {
+    expect((await api.listEssayDocuments())[0]?.revisions).toHaveLength(count);
+  });
+}

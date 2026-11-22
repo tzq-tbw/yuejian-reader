@@ -71,4 +71,12 @@ export const tauriApi: ReaderApi = {
   importWordlist: (input: ImportWordlistInput) =>
     invoke<WordlistSummary>("import_wordlist", { input }),
   deleteWordlist: (id) => invoke<boolean>("delete_wordlist", { id }),
+
+  listEssayDocuments: () => invoke("list_essay_documents"),
+  createEssayDocument: (input) => invoke("create_essay_document", { input }),
+  renameEssayDocument: (id, name) => invoke("rename_essay_document", { id, name }),
+  updateEssayText: (id, text) => invoke("update_essay_text", { id, text }),
+  deleteEssayDocument: (id) => invoke("delete_essay_document", { id }),
+  addEssayRevision: (input) => invoke("add_essay_revision", { input }),
+  deleteEssayRevision: (id) => invoke("delete_essay_revision", { id }),
 };

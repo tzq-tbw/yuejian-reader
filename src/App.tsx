@@ -783,6 +783,7 @@ export function App({
             />
           ) : view === "essay" ? (
             <EssayPage
+              api={api}
               service={essayService ?? builtinEssayService}
               session={essaySession}
               onSessionChange={setEssaySession}

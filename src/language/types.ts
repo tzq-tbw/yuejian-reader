@@ -13,7 +13,7 @@ export interface ModelConfig {
   /** OpenAI 兼容服务的根地址，例如 http://127.0.0.1:3425/v1。 */
   baseUrl: string;
   model: string;
-  /** 占位配置：阶段 3 不实现系统凭据存储，默认空字符串。 */
+  /** 自定义供应商密钥；默认 Magpie 代理为空。 */
   apiKey: string;
   temperature: number;
   timeoutMs: number;

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { SettingsPage } from "./SettingsPage";
@@ -18,6 +18,8 @@ function fileService(overrides: Partial<AppFileService> = {}): AppFileService {
 beforeEach(() => {
   window.localStorage.clear();
 });
+
+afterEach(() => vi.unstubAllGlobals());
 
 describe("设置页", () => {
   it("通过文件服务导出三列生词 CSV，长难句不参与", async () => {
@@ -71,8 +73,7 @@ describe("设置页", () => {
     expect(screen.getAllByText(/当前版本 0\.1\.0/).length).toBeGreaterThan(0);
     await user.click(screen.getByRole("button", { name: "检查更新" }));
     expect(notify).toHaveBeenCalledWith("当前版本 0.1.0；自动检查更新将在阶段 5 接入");
-    await user.click(screen.getByRole("button", { name: "从 GitHub URL 导入（即将支持）" }));
-    expect(notify).toHaveBeenCalledWith("GitHub 在线导入将在后续版本接入；当前请先下载 TXT 或 CSV 后导入");
+    expect(screen.getByRole("button", { name: "从 GitHub URL 导入" })).toBeInTheDocument();
   });
 
   it("本地导入词表、展示来源词数并可删除", async () => {
@@ -105,6 +106,52 @@ describe("设置页", () => {
     vi.spyOn(window, "confirm").mockReturnValue(true);
     await user.click(screen.getByRole("button", { name: "删除词表 高频补充" }));
     await waitFor(() => expect(screen.queryByText("高频补充")).not.toBeInTheDocument());
+  });
+
+  it("从 GitHub Raw URL 下载、解析并导入目标词表", async () => {
+    const api = createMockApi(createMemoryStorage());
+    const fetchImpl = vi.fn().mockResolvedValue(new Response(
+      "rank,word,doc_freq,term_freq\n1,the,1,1\n2,Apple,1,1\n3,of,1,1\n4,banana,1,1\n1201,ignored,1,1\n",
+      { status: 200 },
+    ));
+    vi.stubGlobal("fetch", fetchImpl);
+    const user = userEvent.setup();
+    render(<SettingsPage api={api} notify={vi.fn()} onDataDeleted={vi.fn()} />);
+
+    await user.click(await screen.findByRole("button", { name: "从 GitHub URL 导入" }));
+    expect(screen.getByLabelText("Raw URL")).toHaveValue("https://raw.githubusercontent.com/yiyisheh/CET4-vocabulary/main/output/high_freq_surface_df.csv");
+    const name = screen.getByLabelText("目标词表名");
+    await user.clear(name);
+    await user.type(name, "我的四级在线词表");
+    await user.click(screen.getByRole("button", { name: "下载并导入" }));
+
+    expect(await screen.findByText("我的四级在线词表")).toBeInTheDocument();
+    expect(screen.getByText("2 词")).toBeInTheDocument();
+    expect(screen.getByText("GitHub")).toBeInTheDocument();
+    expect((await api.listWords()).find((list) => list.name === "我的四级在线词表")?.words)
+      .toEqual(["apple", "banana"]);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it("预填 DeepSeek 与通义千问并以密码框保存 API Key", async () => {
+    const user = userEvent.setup();
+    const notify = vi.fn();
+    render(<SettingsPage api={createMockApi(createMemoryStorage())} notify={notify} onDataDeleted={vi.fn()} />);
+
+    const provider = await screen.findByLabelText("供应商");
+    await user.selectOptions(provider, "deepseek");
+    expect(screen.getByLabelText("Base URL")).toHaveValue("https://api.deepseek.com/v1");
+    expect(screen.getByLabelText("模型", { exact: true })).toHaveValue("deepseek-chat");
+    const key = screen.getByLabelText("API Key");
+    expect(key).toHaveAttribute("type", "password");
+    await user.type(key, "deepseek-test-key");
+    await user.click(screen.getByRole("button", { name: "保存模型配置" }));
+    expect(notify).toHaveBeenCalledWith("模型服务已保存：DeepSeek");
+    expect(window.localStorage.getItem("yuejian.modelService")).toContain("deepseek-test-key");
+
+    await user.selectOptions(provider, "qwen");
+    expect(screen.getByLabelText("Base URL")).toHaveValue("https://dashscope.aliyuncs.com/compatible-mode/v1");
+    expect(screen.getByLabelText("模型", { exact: true })).toHaveValue("qwen-plus");
   });
 
   it("两次确认后清空全部业务数据", async () => {

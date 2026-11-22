@@ -269,6 +269,11 @@ pub const MIGRATIONS: &[Migration] = &[
         name: "wordlists",
         sql: include_str!("../migrations/0005_wordlists.sql"),
     },
+    Migration {
+        version: 6,
+        name: "essay_history",
+        sql: include_str!("../migrations/0006_essay_history.sql"),
+    },
 ];
 
 pub fn run_migrations(conn: &mut Connection, migrations: &[Migration]) -> Result<usize, String> {

@@ -39,6 +39,11 @@ import { CET6_WORDS } from "../language/wordlists/cet6";
 import { POSTGRADUATE_WORDS } from "../language/wordlists/postgraduate";
 import { parseWordlist } from "../language/wordlistImport";
 import { wordFavoritesCsv } from "../collection/wordExport";
+import type {
+  AddEssayRevisionInput,
+  CreateEssayDocumentInput,
+  EssayDocument,
+} from "../essay/types";
 
 /**
  * 浏览器预览/测试用的内存实现，数据写入 localStorage。
@@ -143,6 +148,8 @@ interface MockState {
   nextWordFavoriteId: number;
   nextLongSentenceId: number;
   nextReviewEventId: number;
+  nextEssayDocumentId: number;
+  nextEssayRevisionId: number;
   sections: Array<{ id: string; name: string; sortOrder: number; createdAt: string }>;
   suites: MockSuite[];
   articles: MockArticle[];
@@ -152,6 +159,7 @@ interface MockState {
   schedules: MockSchedule[];
   reviewEvents: MockReviewEvent[];
   wordlists: MockWordlist[];
+  essayDocuments: EssayDocument[];
 }
 
 const STORAGE_KEY = "yuejian.browser.db";
@@ -179,6 +187,8 @@ function defaultState(): MockState {
     nextWordFavoriteId: 1,
     nextLongSentenceId: 1,
     nextReviewEventId: 1,
+    nextEssayDocumentId: 1,
+    nextEssayRevisionId: 1,
     sections: [
       { id: "default-section", name: "我的阅读", sortOrder: 10, createdAt: now },
     ],
@@ -218,6 +228,7 @@ function defaultState(): MockState {
         words: [...POSTGRADUATE_WORDS],
       },
     ],
+    essayDocuments: [],
   };
 }
 
@@ -294,6 +305,7 @@ export function createMockApi(storage: StorageLike = createMemoryStorage()): Rea
   state.schedules = Array.isArray(state.schedules) ? state.schedules : [];
   state.reviewEvents = Array.isArray(state.reviewEvents) ? state.reviewEvents : [];
   state.wordlists = Array.isArray(state.wordlists) ? state.wordlists : defaultState().wordlists;
+  state.essayDocuments = Array.isArray(state.essayDocuments) ? state.essayDocuments : [];
   const nextId = (rows: Array<{ id: number }>, stored: unknown) =>
     Math.max(
       typeof stored === "number" ? stored : 1,
@@ -302,6 +314,11 @@ export function createMockApi(storage: StorageLike = createMemoryStorage()): Rea
   state.nextWordFavoriteId = nextId(state.wordFavorites, state.nextWordFavoriteId);
   state.nextLongSentenceId = nextId(state.longSentences, state.nextLongSentenceId);
   state.nextReviewEventId = nextId(state.reviewEvents, state.nextReviewEventId);
+  state.nextEssayDocumentId = nextId(state.essayDocuments, state.nextEssayDocumentId);
+  state.nextEssayRevisionId = nextId(
+    state.essayDocuments.flatMap((document) => document.revisions),
+    state.nextEssayRevisionId,
+  );
   for (const article of state.articles) {
     const legacy = article as Partial<MockArticle>;
     article.suiteId = legacy.suiteId ?? null;
@@ -318,6 +335,39 @@ export function createMockApi(storage: StorageLike = createMemoryStorage()): Rea
     const article = state.articles.find((a) => a.id === id);
     if (!article) throw new Error("找不到这篇文章");
     return article;
+  }
+
+  function essayDocumentById(id: number) {
+    const document = state.essayDocuments.find((item) => item.id === id);
+    if (!document) throw new Error("找不到这篇作文");
+    return document;
+  }
+
+  function essayDocumentView(document: EssayDocument): EssayDocument {
+    return {
+      ...document,
+      revisions: document.revisions.map((revision) => ({
+        ...revision,
+        result: {
+          ...revision.result,
+          issues: revision.result.issues.map((issue) => ({ ...issue })),
+        },
+      })),
+    };
+  }
+
+  function validEssayText(text: string) {
+    const trimmed = text.trim();
+    if (!trimmed) throw new Error("作文正文不能为空");
+    if ([...trimmed].length > 30_000) throw new Error("作文过长，请控制在 30000 个字符以内");
+    return trimmed;
+  }
+
+  function validEssayName(name: string) {
+    const trimmed = name.trim();
+    if (!trimmed) throw new Error("修改区名称不能为空");
+    if ([...trimmed].length > 60) throw new Error("修改区名称不能超过 60 个字符");
+    return trimmed;
   }
 
   function wordView(favorite: MockWordFavorite, today: string): WordFavorite {
@@ -969,6 +1019,90 @@ export function createMockApi(storage: StorageLike = createMemoryStorage()): Rea
       state.wordlists = state.wordlists.filter((list) => list.id !== id);
       persist();
       return state.wordlists.length < before;
+    },
+
+    async listEssayDocuments() {
+      return [...state.essayDocuments]
+        .sort((a, b) => a.sequenceNo - b.sequenceNo)
+        .map(essayDocumentView);
+    },
+
+    async createEssayDocument(input: CreateEssayDocumentInput) {
+      const now = new Date().toISOString();
+      const document: EssayDocument = {
+        id: state.nextEssayDocumentId++,
+        sequenceNo: state.essayDocuments.reduce((max, item) => Math.max(max, item.sequenceNo), 0) + 1,
+        name: input.name?.trim() ? validEssayName(input.name) : "未命名作文",
+        text: validEssayText(input.text),
+        revisions: [],
+        createdAt: now,
+        updatedAt: now,
+      };
+      state.essayDocuments.push(document);
+      persist();
+      return essayDocumentView(document);
+    },
+
+    async renameEssayDocument(id: number, name: string) {
+      const document = essayDocumentById(id);
+      document.name = validEssayName(name);
+      document.updatedAt = new Date().toISOString();
+      persist();
+      return essayDocumentView(document);
+    },
+
+    async updateEssayText(id: number, text: string) {
+      const document = essayDocumentById(id);
+      document.text = validEssayText(text);
+      document.updatedAt = new Date().toISOString();
+      persist();
+      return essayDocumentView(document);
+    },
+
+    async deleteEssayDocument(id: number) {
+      const before = state.essayDocuments.length;
+      state.essayDocuments = state.essayDocuments.filter((document) => document.id !== id);
+      persist();
+      return state.essayDocuments.length < before;
+    },
+
+    async addEssayRevision(input: AddEssayRevisionInput) {
+      const document = essayDocumentById(input.documentId);
+      const text = validEssayText(input.text);
+      const revision = {
+        id: state.nextEssayRevisionId++,
+        documentId: document.id,
+        revisionNo: document.revisions.reduce((max, item) => Math.max(max, item.revisionNo), 0) + 1,
+        text,
+        result: {
+          ...input.result,
+          issues: input.result.issues.map((issue) => ({ ...issue })),
+        },
+        createdAt: new Date().toISOString(),
+      };
+      document.revisions.push(revision);
+      document.text = text;
+      document.updatedAt = revision.createdAt;
+      persist();
+      return {
+        ...revision,
+        result: {
+          ...revision.result,
+          issues: revision.result.issues.map((issue) => ({ ...issue })),
+        },
+      };
+    },
+
+    async deleteEssayRevision(id: number) {
+      for (const document of state.essayDocuments) {
+        const before = document.revisions.length;
+        document.revisions = document.revisions.filter((revision) => revision.id !== id);
+        if (document.revisions.length < before) {
+          persist();
+          return true;
+        }
+      }
+      return false;
     },
   };
 }

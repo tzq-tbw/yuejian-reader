@@ -4,6 +4,7 @@ import {
   DatabaseBackup,
   Download,
   FileUp,
+  KeyRound,
   Link2,
   RefreshCw,
   Settings,
@@ -11,10 +12,23 @@ import {
   Upload,
 } from "lucide-react";
 import type { ReaderApi, WordlistSummary } from "../data/types";
+import {
+  DEFAULT_MODEL_CONFIG,
+  MODEL_PROVIDER_PRESETS,
+  readStoredModelService,
+  saveStoredModelService,
+  type ModelProvider,
+  type StoredModelService,
+} from "../language/config";
 import { appFiles, type AppFileService, type PickedTextFile } from "../data/files";
 import { errorMessage } from "../utils/error";
 import { localDateKey } from "../review/schedule";
 import { Modal } from "../components/Modal";
+import {
+  fetchOnlineWordlist,
+  ONLINE_WORDLIST_SOURCES,
+  type OnlineWordlistFormat,
+} from "../language/onlineWordlist";
 
 interface SettingsPageProps {
   api: ReaderApi;
@@ -35,6 +49,17 @@ export function SettingsPage({
   const [deleteStage, setDeleteStage] = useState<0 | 1 | 2>(0);
   const [importDraft, setImportDraft] = useState<PickedTextFile | null>(null);
   const [importName, setImportName] = useState("");
+  const [onlineDraft, setOnlineDraft] = useState<{
+    url: string;
+    name: string;
+    format: OnlineWordlistFormat;
+  } | null>(null);
+  const [modelDraft, setModelDraft] = useState<StoredModelService>(() =>
+    readStoredModelService() ?? {
+      provider: "magpie",
+      ...DEFAULT_MODEL_CONFIG,
+    },
+  );
 
   const refreshWordlists = useCallback(async () => {
     try {
@@ -61,6 +86,27 @@ export function SettingsPage({
       setBusy(null);
     }
   }
+
+  const saveModelService = () =>
+    run("model", async () => {
+      if (!modelDraft.baseUrl.trim() || !modelDraft.model.trim()) {
+        throw new Error("Base URL 和模型名称不能为空");
+      }
+      let url: URL;
+      try {
+        url = new URL(modelDraft.baseUrl);
+      } catch {
+        throw new Error("请输入有效的 Base URL");
+      }
+      if (url.protocol !== "https:" && url.protocol !== "http:") {
+        throw new Error("Base URL 必须使用 HTTP 或 HTTPS");
+      }
+      if (modelDraft.provider !== "magpie" && !modelDraft.apiKey.trim()) {
+        throw new Error("直连供应商需要填写 API Key");
+      }
+      saveStoredModelService(modelDraft);
+      notify(`模型服务已保存：${MODEL_PROVIDER_PRESETS[modelDraft.provider].label}`);
+    });
 
   const exportWords = () =>
     run("export", async () => {
@@ -108,6 +154,20 @@ export function SettingsPage({
       notify(`已导入「${imported.name}」${imported.wordCount} 词，可在阅读页启用`);
     });
 
+  const importOnlineWordlist = () =>
+    run("online-import", async () => {
+      if (!onlineDraft) return;
+      const downloaded = await fetchOnlineWordlist(onlineDraft.url, onlineDraft.format);
+      const imported = await api.importWordlist({
+        name: onlineDraft.name,
+        source: downloaded.url,
+        content: downloaded.words.join("\n"),
+      });
+      setOnlineDraft(null);
+      await refreshWordlists();
+      notify(`已从 GitHub 导入「${imported.name}」${imported.wordCount} 词`);
+    });
+
   const deleteWordlist = (list: WordlistSummary) => {
     if (!window.confirm(`删除词表「${list.name}」？此操作不会影响文章和收藏。`)) return;
     void run(`wordlist:${list.id}`, async () => {
@@ -125,6 +185,54 @@ export function SettingsPage({
       </div>
       <div className="libScroll">
         <div className="libInner settingsInner">
+          <section className="settingsSection" aria-labelledby="settings-model">
+            <div className="settingsHeading">
+              <KeyRound size={19} />
+              <div>
+                <h2 id="settings-model">模型服务</h2>
+                <p>精读与作文共用此配置；保存后新请求立即使用所选供应商。</p>
+              </div>
+            </div>
+            <div className="modelServiceForm">
+              <label>
+                供应商
+                <select value={modelDraft.provider} onChange={(event) => {
+                  const provider = event.target.value as ModelProvider;
+                  const preset = MODEL_PROVIDER_PRESETS[provider];
+                  setModelDraft((current) => ({
+                    ...current,
+                    provider,
+                    baseUrl: preset.baseUrl,
+                    model: preset.model,
+                    apiKey: provider === "magpie" ? "" : current.apiKey,
+                  }));
+                }}>
+                  {Object.entries(MODEL_PROVIDER_PRESETS).map(([id, preset]) => (
+                    <option value={id} key={id}>{preset.label}</option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Base URL
+                <input type="url" value={modelDraft.baseUrl} onChange={(event) => setModelDraft((current) => ({ ...current, baseUrl: event.target.value }))} />
+              </label>
+              <label>
+                模型
+                <input type="text" value={modelDraft.model} onChange={(event) => setModelDraft((current) => ({ ...current, model: event.target.value }))} />
+              </label>
+              <label>
+                API Key
+                <input type="password" autoComplete="new-password" placeholder={modelDraft.provider === "magpie" ? "默认代理无需填写" : "输入供应商 API Key"} value={modelDraft.apiKey} onChange={(event) => setModelDraft((current) => ({ ...current, apiKey: event.target.value }))} />
+              </label>
+              <div className="modelServiceFoot">
+                <span>API Key 暂存于本机 localStorage，阶段 5 迁移到系统凭据。</span>
+                <button type="button" className="primary" disabled={busy !== null} onClick={() => void saveModelService()}>
+                  <Check size={15} /> {busy === "model" ? "保存中…" : "保存模型配置"}
+                </button>
+              </div>
+            </div>
+          </section>
+
           <section className="settingsSection" aria-labelledby="settings-data">
             <div className="settingsHeading">
               <DatabaseBackup size={19} />
@@ -170,8 +278,11 @@ export function SettingsPage({
               <button type="button" disabled={busy !== null} onClick={() => void pickWordlist()}>
                 <Upload size={15} /> 从本地 TXT / CSV 导入
               </button>
-              <button type="button" className="ghostButton" onClick={() => notify("GitHub 在线导入将在后续版本接入；当前请先下载 TXT 或 CSV 后导入")}>
-                <Link2 size={15} /> 从 GitHub URL 导入（即将支持）
+              <button type="button" className="ghostButton" disabled={busy !== null} onClick={() => {
+                const source = ONLINE_WORDLIST_SOURCES[0];
+                setOnlineDraft({ url: source.url, name: source.name, format: source.format });
+              }}>
+                <Link2 size={15} /> 从 GitHub URL 导入
               </button>
             </div>
             {loading ? (
@@ -188,7 +299,7 @@ export function SettingsPage({
                     </div>
                     <span>{list.wordCount.toLocaleString()} 词</span>
                     <span className="enabledLabel">{list.enabled && <Check size={13} />} {list.enabled ? "已启用" : "未启用"}</span>
-                    <span className="wordlistOrigin">{list.builtIn ? "内置" : "本地导入"}</span>
+                    <span className="wordlistOrigin">{list.builtIn ? "内置" : list.source.startsWith("https://raw.githubusercontent.com/") ? "GitHub" : "本地导入"}</span>
                     <button
                       type="button"
                       className="icon danger"
@@ -237,6 +348,51 @@ export function SettingsPage({
           <input data-autofocus value={importName} maxLength={60} onChange={(event) => setImportName(event.target.value)} />
         </label>
         <p className="dialogHint">来源：{importDraft?.name}。支持一行一词，或首列为单词的 CSV；重复词会自动合并。</p>
+      </Modal>
+
+      <Modal
+        open={onlineDraft !== null}
+        title="从 GitHub 导入词表"
+        onClose={() => setOnlineDraft(null)}
+        footer={
+          <div className="dialogActions">
+            <button type="button" onClick={() => setOnlineDraft(null)}>取消</button>
+            <button type="button" className="primary" disabled={!onlineDraft?.name.trim() || !onlineDraft.url.trim() || busy !== null} onClick={() => void importOnlineWordlist()}>
+              {busy === "online-import" ? "下载并导入中…" : "下载并导入"}
+            </button>
+          </div>
+        }
+      >
+        <div className="onlineSourcePresets" aria-label="已验证词源">
+          {ONLINE_WORDLIST_SOURCES.map((source) => (
+            <button
+              type="button"
+              key={source.format}
+              className={onlineDraft?.format === source.format ? "selected" : ""}
+              aria-pressed={onlineDraft?.format === source.format}
+              onClick={() => setOnlineDraft({ url: source.url, name: source.name, format: source.format })}
+            >
+              {source.label}
+            </button>
+          ))}
+        </div>
+        <label className="dialogField">
+          Raw URL
+          <input data-autofocus type="url" value={onlineDraft?.url ?? ""} onChange={(event) => setOnlineDraft((current) => current ? { ...current, url: event.target.value } : current)} />
+        </label>
+        <label className="dialogField">
+          来源格式
+          <select value={onlineDraft?.format ?? "cet4-frequency"} onChange={(event) => setOnlineDraft((current) => current ? { ...current, format: event.target.value as OnlineWordlistFormat } : current)}>
+            <option value="cet4-frequency">四级词频 CSV（rank 1–1200，过滤功能词）</option>
+            <option value="cet6-markdown">六级 Markdown 表格</option>
+            <option value="postgraduate-comma">考研逗号分隔文本</option>
+          </select>
+        </label>
+        <label className="dialogField">
+          目标词表名
+          <input value={onlineDraft?.name ?? ""} maxLength={60} onChange={(event) => setOnlineDraft((current) => current ? { ...current, name: event.target.value } : current)} />
+        </label>
+        <p className="dialogHint">仅接受 GitHub Raw HTTPS 地址。解析后作为独立词表保存，不覆盖内置词表。</p>
       </Modal>
 
       <Modal

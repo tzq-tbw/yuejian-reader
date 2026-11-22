@@ -62,6 +62,12 @@ function pad(index: number) {
   return String(index + 1).padStart(2, "0");
 }
 
+const VOCABULARY_LEGEND = [
+  { id: "cet4", label: "四级高频", className: "cet4" },
+  { id: "cet6", label: "六级高频", className: "cet6" },
+  { id: "ky", label: "考研高频", className: "ky" },
+] as const;
+
 export function ReaderView({
   api,
   notify,
@@ -254,6 +260,14 @@ export function ReaderView({
             </div>
             <h1>{article.title}</h1>
             <hr />
+            {vocabularyLists.some((list) => VOCABULARY_LEGEND.some((item) => item.id === list.id)) && (
+              <div className="vocabLegend" aria-label="词表高亮图例">
+                {VOCABULARY_LEGEND.filter((item) => vocabularyLists.some((list) => list.id === item.id)).map((item) => (
+                  <span key={item.id}><i className={item.className} />{item.label}</span>
+                ))}
+                <small>重叠命中以多色下划线区分</small>
+              </div>
+            )}
             {article.paragraphs.map((paragraph, index) => (
               <section key={`${article.id}-${index}`}>
                 <div className="parhead">

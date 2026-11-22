@@ -759,7 +759,40 @@ footer span { margin-left: auto; }
 .markToggle:hover { background: #eaf0f8; }
 .markToggle.on { color: #2459a3; background: #eaf1fc; }
 .sheet mark.vocabMark { cursor: pointer; }
-.sheet mark.vocabMark:hover { background: #d9e8fc; }
+.sheet mark.vocabMark.cet4:not(.cet6):not(.ky) { color: #174f91; background: #dcecff; border-bottom: 2px solid #2472d0; }
+.sheet mark.vocabMark.cet6:not(.cet4):not(.ky) { color: #5c2b91; background: #efe1ff; border-bottom: 2px solid #8250c7; }
+.sheet mark.vocabMark.ky:not(.cet4):not(.cet6) { color: #88400c; background: #ffead2; border-bottom: 2px solid #d66a16; }
+.sheet mark.vocabMark.cet4.cet6,
+.sheet mark.vocabMark.cet4.ky,
+.sheet mark.vocabMark.cet6.ky,
+.sheet mark.vocabMark.cet4.cet6.ky {
+  padding-bottom: 4px;
+  border-bottom: 0;
+  color: #29384b;
+}
+.sheet mark.vocabMark.cet4.cet6:not(.ky) {
+  background: linear-gradient(120deg, #dcecff 0 48%, #efe1ff 52% 100%);
+  box-shadow: inset 0 -2px #2472d0, inset 0 -4px #8250c7;
+}
+.sheet mark.vocabMark.cet4.ky:not(.cet6) {
+  background: linear-gradient(120deg, #dcecff 0 48%, #ffead2 52% 100%);
+  box-shadow: inset 0 -2px #2472d0, inset 0 -4px #d66a16;
+}
+.sheet mark.vocabMark.cet6.ky:not(.cet4) {
+  background: linear-gradient(120deg, #efe1ff 0 48%, #ffead2 52% 100%);
+  box-shadow: inset 0 -2px #8250c7, inset 0 -4px #d66a16;
+}
+.sheet mark.vocabMark.cet4.cet6.ky {
+  background: linear-gradient(120deg, #dcecff 0 31%, #efe1ff 34% 64%, #ffead2 67% 100%);
+  box-shadow: inset 0 -2px #2472d0, inset 0 -4px #8250c7, inset 0 -6px #d66a16;
+}
+.vocabLegend { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 16px; margin: -9px 0 22px; color: #637289; font-size: 11px; }
+.vocabLegend > span { display: inline-flex; align-items: center; gap: 6px; }
+.vocabLegend i { width: 20px; height: 9px; border-radius: 2px; }
+.vocabLegend i.cet4 { background: #dcecff; border-bottom: 2px solid #2472d0; }
+.vocabLegend i.cet6 { background: #efe1ff; border-bottom: 2px solid #8250c7; }
+.vocabLegend i.ky { background: #ffead2; border-bottom: 2px solid #d66a16; }
+.vocabLegend small { color: #8492a6; }
 .selectionToolbar { z-index: 12; padding: 5px; gap: 2px; }
 .bubble button {
   display: inline-flex;
@@ -1243,6 +1276,11 @@ footer span { margin-left: auto; }
 .settingsHeading h2 { margin: 0; color: #253c57; font-size: 17px; }
 .settingsHeading p { margin: 4px 0 0; color: var(--muted); font-size: 12px; }
 .settingsRows { border-top: 1px solid #edf0f5; }
+.modelServiceForm { display: grid; grid-template-columns: 1fr 2fr; gap: 14px 18px; padding: 17px 21px 20px; border-top: 1px solid #edf0f5; }
+.modelServiceForm > label { display: grid; gap: 6px; color: #53657c; font-size: 12px; }
+.modelServiceForm input, .modelServiceForm select { width: 100%; min-width: 0; border: 1px solid #c7d3e2; border-radius: 8px; background: #fff; color: #34465c; padding: 8px 10px; font: 13px "Segoe UI", "Microsoft YaHei", sans-serif; }
+.modelServiceFoot { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; gap: 15px; color: #7b899c; font-size: 11px; }
+.modelServiceFoot button { display: inline-flex; align-items: center; gap: 6px; flex: none; border: 1px solid #2c65be; border-radius: 8px; background: #2c65be; color: #fff; padding: 7px 12px; }
 .settingsRow { display: flex; align-items: center; gap: 20px; padding: 16px 21px; border-bottom: 1px solid #edf0f5; }
 .settingsRow:last-child { border-bottom: 0; }
 .settingsRow > div { flex: 1; display: grid; gap: 4px; }
@@ -1270,7 +1308,13 @@ footer span { margin-left: auto; }
 .dialogActions button { border: 1px solid #bdcadb; border-radius: 8px; padding: 7px 13px; background: #fff; color: #3d5675; }
 .dialogActions button.primary { background: #2c65be; color: #fff; border-color: #2c65be; }
 .dialogActions button.danger { background: #b43b3b; color: #fff; border-color: #b43b3b; }
+.onlineSourcePresets { display: flex; flex-wrap: wrap; gap: 7px; margin: 15px 0 4px; }
+.onlineSourcePresets button { border: 1px solid #c7d3e2; border-radius: 7px; background: #fff; color: #526a87; padding: 5px 8px; font-size: 12px; }
+.onlineSourcePresets button.selected { border-color: #2c65be; background: #eaf1fc; color: #2459a3; }
+.dialogField select { width: 100%; border: 1px solid #c7d3e2; border-radius: 8px; padding: 8px 10px; background: #fff; color: #34465c; font: inherit; }
 @media (max-width: 850px) {
+  .modelServiceForm { grid-template-columns: 1fr; }
+  .modelServiceFoot { grid-column: 1; align-items: flex-start; flex-direction: column; }
   .settingsRow { align-items: flex-start; flex-direction: column; gap: 10px; }
   .wordlistRow { grid-template-columns: minmax(150px, 1fr) 65px 70px 32px; }
   .wordlistOrigin { display: none; }
@@ -1291,6 +1335,27 @@ footer span { margin-left: auto; }
 .wordlistCheck.checked { border-color: #2c65be; background: #2c65be; }
 
 /* R5 作文批改 */
+.essayBody { display: flex; flex: 1; min-height: 0; }
+.essayBody > .libScroll { flex: 1; min-width: 0; }
+.essayHistoryToggle { margin-left: auto; }
+.essayHistory { width: 205px; flex: none; overflow: auto; padding: 15px 12px; border-right: 1px solid var(--line); background: #f7f9fc; }
+.essayHistoryHead { display: flex; align-items: center; justify-content: space-between; padding: 0 4px 10px; color: #344c69; }
+.essayNewDocument { display: flex; align-items: center; justify-content: center; gap: 5px; width: 100%; padding: 7px; border: 1px solid #bdccdf; border-radius: 8px; background: #fff; color: #315f9d; }
+.essayHistoryEmpty { color: #7b899c; font-size: 12px; text-align: center; margin: 20px 4px; }
+.essayHistoryList { margin-top: 13px; }
+.essayHistoryRow { display: flex; align-items: center; gap: 1px; border-radius: 8px; }
+.essayHistoryRow.selected { background: #e6eef9; }
+.essaySequence { flex: 1; min-width: 0; border: 0; background: transparent; color: #29496f; font-size: 16px; font-weight: 650; text-align: left; padding: 8px 11px; }
+.essayHistory .icon.danger { color: #a83b3b; }
+.essayRevisionList { margin: 2px 0 8px 17px; padding-left: 10px; border-left: 1px solid #ccd8e6; }
+.essayRevisionList > small { display: block; padding: 5px; color: #8492a6; }
+.essayRevisionRow { display: flex; align-items: center; }
+.essayRevisionRow > button:first-child { flex: 1; min-width: 0; border: 0; border-radius: 6px; background: transparent; color: #64768c; text-align: left; padding: 6px; font-size: 12px; }
+.essayRevisionRow > button:first-child.selected { background: #e6eef9; color: #285b9d; }
+.essayDocumentBar { display: flex; align-items: center; gap: 9px; min-height: 42px; padding: 7px 19px; border-bottom: 1px solid #edf0f5; background: #fafbfd; color: #7a889b; font-size: 12px; }
+.essayDocumentBar strong { color: #344c69; font-size: 13px; }
+.essayRename { display: flex; align-items: center; gap: 5px; flex: 1; }
+.essayRename input { flex: 1; max-width: 320px; border: 1px solid #bdccdf; border-radius: 7px; padding: 5px 8px; font: inherit; color: #344c69; }
 .essayInner { max-width: 940px; padding: 26px 30px 60px; }
 .essayComposer, .essayResults { border: 1px solid var(--line); border-radius: 13px; background: #fff; overflow: hidden; }
 .essaySectionHead, .essayResultTitle { display: flex; align-items: center; justify-content: space-between; padding: 15px 19px; border-bottom: 1px solid #edf0f5; }
@@ -1327,6 +1392,7 @@ footer span { margin-left: auto; }
 .essayPolished h3 { margin: 0 0 12px; color: #2c4d70; font-size: 17px; }
 .essayPolished p { margin: 0; white-space: pre-wrap; color: #293e57; font: 18px/1.75 Georgia, serif; }
 @media (max-width: 760px) {
+  .essayHistory { width: 160px; padding: 12px 8px; }
   .essayInner, .settingsInner { padding: 18px 14px 45px; }
   .essayIssueHeading span { display: none; }
 }

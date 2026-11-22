@@ -10,7 +10,7 @@ export function createEssayService(options: {
   transport?: ChatTransport;
   config?: Partial<ModelConfig>;
 } = {}): EssayService {
-  const config = resolveModelConfig(options.config);
+  const config = () => resolveModelConfig(options.config);
   const transport = options.transport ?? createDefaultTransport(config);
   return {
     async review(text: string): Promise<EssayReview> {
@@ -19,7 +19,7 @@ export function createEssayService(options: {
       if (essay.length > 30_000) throw new Error("作文过长，请控制在 30000 个字符以内");
       const raw = await transport.chat({
         messages: buildEssayReviewMessages(essay),
-        temperature: config.temperature,
+        temperature: config().temperature,
         maxTokens: 5000,
       });
       return parseEssayReview(extractChatContent(raw));

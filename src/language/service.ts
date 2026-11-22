@@ -34,13 +34,13 @@ function translationMode(input: TextRequestInput): "selection" | "paragraph" {
  * 传输层可替换，单元测试和组件测试注入可控延迟桩。
  */
 export function createLanguageService(options: ServiceOptions = {}): LanguageService {
-  const config = resolveModelConfig(options.config);
+  const config = () => resolveModelConfig(options.config);
   const transport = options.transport ?? createDefaultTransport(config);
 
   async function complete(messages: ChatMessage[], maxTokens: number): Promise<string> {
     const raw = await transport.chat({
       messages,
-      temperature: config.temperature,
+      temperature: config().temperature,
       maxTokens,
     });
     return extractChatContent(raw);

@@ -1,4 +1,5 @@
 mod db;
+mod essay_history;
 mod review;
 mod settings;
 mod wordlists;
@@ -8,6 +9,9 @@ use db::{
     FavoriteAddResult, FillLongSentenceInput, ImportSuiteInput, ImportSuiteResult,
     LibraryGroup, LongSentenceFavorite, PasteArticleInput, ReviewEventInput, ReviewEventResult,
     Section, UpdateArticleInput, WordFavorite,
+};
+use essay_history::{
+    AddEssayRevisionInput, CreateEssayDocumentInput, EssayDocument, EssayRevision,
 };
 use std::sync::Mutex;
 use tauri::{Manager, State};
@@ -91,7 +95,7 @@ async fn model_chat(input: ModelChatInput) -> Result<serde_json::Value, String> 
             "模型请求超时，请稍后重试".to_string()
         } else if error.is_connect() {
             format!(
-                "无法连接模型服务 {}，请确认 Magpie 代理已启动",
+                "无法连接模型服务 {}，请检查地址、网络或代理状态",
                 input.base_url.trim()
             )
         } else {
@@ -321,6 +325,55 @@ fn delete_wordlist(state: State<'_, DbState>, id: String) -> Result<bool, String
     with_conn(&state, |conn| wordlists::delete_wordlist(conn, &id))
 }
 
+#[tauri::command]
+fn list_essay_documents(state: State<'_, DbState>) -> Result<Vec<EssayDocument>, String> {
+    with_conn(&state, |conn| essay_history::list_essay_documents(conn))
+}
+
+#[tauri::command]
+fn create_essay_document(
+    state: State<'_, DbState>,
+    input: CreateEssayDocumentInput,
+) -> Result<EssayDocument, String> {
+    with_conn(&state, |conn| essay_history::create_essay_document(conn, input))
+}
+
+#[tauri::command]
+fn rename_essay_document(
+    state: State<'_, DbState>,
+    id: i64,
+    name: String,
+) -> Result<EssayDocument, String> {
+    with_conn(&state, |conn| essay_history::rename_essay_document(conn, id, name))
+}
+
+#[tauri::command]
+fn update_essay_text(
+    state: State<'_, DbState>,
+    id: i64,
+    text: String,
+) -> Result<EssayDocument, String> {
+    with_conn(&state, |conn| essay_history::update_essay_text(conn, id, text))
+}
+
+#[tauri::command]
+fn delete_essay_document(state: State<'_, DbState>, id: i64) -> Result<bool, String> {
+    with_conn(&state, |conn| essay_history::delete_essay_document(conn, id))
+}
+
+#[tauri::command]
+fn add_essay_revision(
+    state: State<'_, DbState>,
+    input: AddEssayRevisionInput,
+) -> Result<EssayRevision, String> {
+    with_conn(&state, |conn| essay_history::add_essay_revision(conn, input))
+}
+
+#[tauri::command]
+fn delete_essay_revision(state: State<'_, DbState>, id: i64) -> Result<bool, String> {
+    with_conn(&state, |conn| essay_history::delete_essay_revision(conn, id))
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -363,6 +416,13 @@ pub fn run() {
             list_words,
             import_wordlist,
             delete_wordlist,
+            list_essay_documents,
+            create_essay_document,
+            rename_essay_document,
+            update_essay_text,
+            delete_essay_document,
+            add_essay_revision,
+            delete_essay_revision,
             model_chat,
         ])
         .run(tauri::generate_context!())

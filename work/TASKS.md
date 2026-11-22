@@ -199,3 +199,25 @@ Kimi 实测独立复跑 npm test 110、cargo test 29 一致。
 
 - Kimi 修 ISSUE-07（vocabMenuItem 专用类 + 全局规则排除 menuitemcheckbox，headless computed style 回归断言）+ 作文迟到隔离直接测试。负责人实测：npm test 130/133、build 通过。
 - ISSUE-07 关闭。R5 全部四项完成：导出修复+设置页 / 词表管理 / 高亮选择器 / 作文批改
+
+
+## 迭代 R6（老田 2026-11-22 13:47 四项）
+
+1. 词表高亮分色：四/六/考研三种明显不同的高亮颜色（重叠词需可辨）
+2. 作文批改历史：作文批改页加可收缩侧边栏；列表只显序号（如 1、2、3），一篇作文=一个序号=修改区（不同次批改归同一序号下，可展开历次批改）；修改区可命名（如「26四级作文」）
+3. 高频词源：负责人负责搜索 GitHub 可靠词源（600-1500 词/表），补在线导入或换数据
+4. 设置加自定义 API Key：支持 DeepSeek 与通义千问 API 直连
+流程：Kimi 改 → Claude 反审 → 负责人实测 → git 提交
+
+- 词源调研完成（负责人 2026-11-22 13:55 实测网络验证）：
+  a) 四级高频：yiyisheh/CET4-vocabulary（MIT）output/high_freq_surface_df.csv——2021-2025真题词频排序，取 rank 1-1200，剔除超短功能词（the/of/a 等）后导入
+  b) 六级高频：wangjiuyi543-ui/cet6-vocabulary cet6_core_words_top500_simple.md（Markdown 表格解析 | 序号 | 单词 | 中文 |）——500 核心词
+  c) 考研高频：wyyxdgm/dc dcb.txt（单行逗号分隔 2371 词，考研高频集合）——全量导入或筛选
+  实现方式：Rust 端 fetch 下载（reqwest 已有）或前端 GitHub raw URL 导入，解析三种格式（词频CSV / Markdown表 / 逗号行），导入到对应词表
+
+
+## R6 审查与收官（2026-11-22 14:46）
+
+- Claude 反审（REVIEW-R6.md）：四项全过。亮点：下载三个真实 GitHub 词源实测解析（1087/500/2303 词与交付一致、功能词确认被过滤、404/格式错不导入半表）；三色 computed style 断言；作文历史双重校验保迟到隔离。
+- 非阻塞备注 3 条：序号删除最大后新建会复用数字；点击历史版本装入编辑区失焦会写回（「选择即恢复」语义）；四级功能词白名单未覆盖 may/might/must/would。已记录，后续打磨轮消化。
+- 负责人终审：R6 通过。实测 npm test 141/144、cargo test 37/37、build 通过。

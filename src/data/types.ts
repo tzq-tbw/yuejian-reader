@@ -1,5 +1,12 @@
 /** 与 src-tauri 中的命令返回值一一对应。字段名使用 camelCase。 */
 
+import type {
+  AddEssayRevisionInput,
+  CreateEssayDocumentInput,
+  EssayDocument,
+  EssayRevision,
+} from "../essay/types";
+
 export interface Section {
   id: string;
   name: string;
@@ -231,6 +238,14 @@ export interface ReaderApi {
   listWords(listIds?: string[]): Promise<WordlistWords[]>;
   importWordlist(input: ImportWordlistInput): Promise<WordlistSummary>;
   deleteWordlist(id: string): Promise<boolean>;
+
+  listEssayDocuments(): Promise<EssayDocument[]>;
+  createEssayDocument(input: CreateEssayDocumentInput): Promise<EssayDocument>;
+  renameEssayDocument(id: number, name: string): Promise<EssayDocument>;
+  updateEssayText(id: number, text: string): Promise<EssayDocument>;
+  deleteEssayDocument(id: number): Promise<boolean>;
+  addEssayRevision(input: AddEssayRevisionInput): Promise<EssayRevision>;
+  deleteEssayRevision(id: number): Promise<boolean>;
 }
 
 export const UNCATEGORIZED = "未分类";
