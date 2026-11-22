@@ -6,7 +6,7 @@ import type {
   ChatTransport,
   WordRequestInput,
 } from "./types";
-import { resolveModelConfig } from "./config";
+import { loadModelConfig } from "./config";
 import { createDefaultTransport } from "./transport";
 import {
   buildAnalysisMessages,
@@ -34,13 +34,14 @@ function translationMode(input: TextRequestInput): "selection" | "paragraph" {
  * 传输层可替换，单元测试和组件测试注入可控延迟桩。
  */
 export function createLanguageService(options: ServiceOptions = {}): LanguageService {
-  const config = () => resolveModelConfig(options.config);
+  const config = () => loadModelConfig(options.config);
   const transport = options.transport ?? createDefaultTransport(config);
 
   async function complete(messages: ChatMessage[], maxTokens: number): Promise<string> {
+    const resolvedConfig = await config();
     const raw = await transport.chat({
       messages,
-      temperature: config().temperature,
+      temperature: resolvedConfig.temperature,
       maxTokens,
     });
     return extractChatContent(raw);

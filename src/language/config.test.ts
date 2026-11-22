@@ -1,11 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { invoke } from "@tauri-apps/api/core";
 import {
   DEFAULT_MODEL_CONFIG,
   resolveModelConfig,
+  loadModelApiKey,
+  loadModelConfig,
+  persistModelService,
   saveStoredModelService,
   type ModelProvider,
 } from "./config";
 import { createFetchTransport } from "./transport";
+
+vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 
 function saveProvider(provider: ModelProvider, apiKey: string) {
   const direct = provider === "deepseek"
@@ -20,7 +26,11 @@ function saveProvider(provider: ModelProvider, apiKey: string) {
   });
 }
 
-beforeEach(() => window.localStorage.clear());
+beforeEach(() => {
+  saveStoredModelService({ provider: "magpie", ...DEFAULT_MODEL_CONFIG });
+  window.localStorage.clear();
+  vi.clearAllMocks();
+});
 afterEach(() => vi.unstubAllGlobals());
 
 describe("自定义模型服务配置", () => {
@@ -53,5 +63,44 @@ describe("自定义模型服务配置", () => {
     expect(fetchImpl.mock.calls[1][0]).toBe("https://api.deepseek.com/v1/chat/completions");
     expect(fetchImpl.mock.calls[1][1].headers).toMatchObject({ Authorization: "Bearer deepseek-secret" });
     expect(JSON.parse(fetchImpl.mock.calls[1][1].body).model).toBe("deepseek-chat");
+  });
+
+  it("桌面端 Key 经 Tauri 保存和读取，localStorage 只含非敏感配置", async () => {
+    vi.stubGlobal("__TAURI_INTERNALS__", {});
+    vi.mocked(invoke).mockImplementation((command) => {
+      if (command === "get_model_api_key") return Promise.resolve("desktop-secret");
+      return Promise.resolve(undefined);
+    });
+    await persistModelService({
+      provider: "deepseek",
+      baseUrl: "https://api.deepseek.com/v1",
+      model: "deepseek-chat",
+      apiKey: "desktop-secret",
+      temperature: DEFAULT_MODEL_CONFIG.temperature,
+      timeoutMs: DEFAULT_MODEL_CONFIG.timeoutMs,
+    });
+
+    expect(invoke).toHaveBeenCalledWith("save_model_api_key", { apiKey: "desktop-secret" });
+    const stored = window.localStorage.getItem("yuejian.modelService")!;
+    expect(stored).not.toContain("desktop-secret");
+    expect(JSON.parse(stored).apiKey).toBeUndefined();
+    expect((await loadModelConfig()).apiKey).toBe("desktop-secret");
+  });
+
+  it("桌面端首次读取迁移旧 localStorage Key 并移除明文", async () => {
+    vi.stubGlobal("__TAURI_INTERNALS__", {});
+    window.localStorage.setItem("yuejian.modelService", JSON.stringify({
+      provider: "qwen",
+      baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1",
+      model: "qwen-plus",
+      apiKey: "legacy-secret",
+    }));
+    vi.mocked(invoke).mockResolvedValue("");
+
+    expect(await loadModelApiKey()).toBe("legacy-secret");
+    expect(invoke).toHaveBeenCalledWith("save_model_api_key", { apiKey: "legacy-secret" });
+    expect(window.localStorage.getItem("yuejian.modelService")).not.toContain("legacy-secret");
+    await loadModelApiKey();
+    expect(invoke).toHaveBeenCalledWith("get_model_api_key");
   });
 });

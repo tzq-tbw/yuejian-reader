@@ -242,3 +242,16 @@ Kimi 实测独立复跑 npm test 110、cargo test 29 一致。
 - 精简2：作文列表按需读取（列表摘要+展开读历史+局部更新）
 
 - GitHub 私库建立完成（2026-11-22 19:21）：tzq-tbw/yuejian-reader（PRIVATE），16 个提交全部推送，master 跟踪 origin/master，本地领先 0
+
+
+## R7 反审（Claude，REVIEW-R7.md，负责人终审）
+
+8 项通过，1 项不通过：P1-2 修复本身成立，但 showRevision 把 documentId 换成被预览作文却保留 text/dirty，破坏「ID+正文+脏标记同态」不变量——编辑 A 预览 B 历史→切页返回→A 草稿挂在 B 名下，继续编辑覆盖 B（P1-1 同类错位残留，修复引入的回归）。复现探针验证过。
+另：精简2 有一处测试缺口。其余全部通过，无阶段3/5/6 回归。
+修复：Kimi 修回归（预览态不动会话三字段，恢复此版本一次性写 ID+正文+干净标记；预览标签用 previewRevision.documentId 派生）+ 跨文档预览切页测试 + 精简2 缺口 → 负责人实测 → 提交推送
+
+
+## R7.1 修复轮（2026-11-22 20:05–20:10）
+
+- Kimi 修 P1-2 回归：showRevision 不再动会话三字段，预览标签由 previewRevision.documentId 派生；恢复此版本一次性写 ID+正文+干净标记。+2 回归测试（跨文档预览切页、精简2 摘要断言）。负责人实测：npm test 155/158、build 通过。
+- 负责人终审：R7 全部 9 项 + 反审回归修复关闭。R7 收官。

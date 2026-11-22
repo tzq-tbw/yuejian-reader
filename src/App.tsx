@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { App as KonstaApp } from "konsta/react";
 import { BookOpen, Bookmark, CalendarCheck, LibraryBig, PenLine, Settings } from "lucide-react";
 import type {
@@ -149,7 +149,14 @@ export function App({
   } | null>(null);
   const [builtinLanguage] = useState(() => createLanguageService());
   const [builtinEssayService] = useState(() => createEssayService());
-  const [essaySession, setEssaySession] = useState<EssaySession>({ text: "", result: null });
+  const openArticleRequestRef = useRef(0);
+  const [essaySession, setEssaySession] = useState<EssaySession>({
+    documentId: null,
+    text: "",
+    result: null,
+    dirty: false,
+    pendingId: null,
+  });
   const languageService = language ?? builtinLanguage;
   const assistant = useReadingAssistant(currentArticle, languageService);
   const openAssistantSide = () => setSideOpen(true);
@@ -323,56 +330,46 @@ export function App({
     setEditorError("");
   }, [editor]);
 
-  const selectArticle = useCallback(
-    async (sectionId: string, articleId: number) => {
+  const openArticle = useCallback(
+    async (
+      articleId: number,
+      options: {
+        sectionId?: string;
+        paragraphStart?: number;
+        paragraphEnd?: number;
+      } = {},
+    ) => {
+      const requestId = ++openArticleRequestRef.current;
       if (editor) {
         const saved = await saveEditor();
-        if (!saved) return;
+        if (!saved || openArticleRequestRef.current !== requestId) return;
       }
       try {
-        await loadAndSetArticle(sectionId, articleId);
-        setExpanded((previous) => new Set(previous).add(sectionId));
-      } catch (cause) {
-        notify(errorMessage(cause), "error");
-      }
-    },
-    [editor, saveEditor, loadAndSetArticle, notify],
-  );
-
-  const openArticleFromLibrary = useCallback(
-    async (articleId: number, paragraphStart?: number, paragraphEnd?: number) => {
-      if (editor) {
-        const saved = await saveEditor();
-        if (!saved) return;
-      }
-      try {
-        const { article, memberships: nextMemberships } = await fetchArticle(
-          api,
-          articleId,
-        );
+        const { article, memberships: nextMemberships } = await fetchArticle(api, articleId);
+        if (openArticleRequestRef.current !== requestId) return;
+        const sectionId = options.sectionId ?? nextMemberships[0]?.id ?? null;
         setView("reader");
         setCurrentArticle(article);
-        setCurrentSectionId(nextMemberships[0]?.id ?? null);
+        setCurrentSectionId(sectionId);
         setParagraphTarget(
-          paragraphStart === undefined
+          options.paragraphStart === undefined
             ? null
             : {
                 articleId,
-                paragraphStart,
-                paragraphEnd: paragraphEnd ?? paragraphStart,
+                paragraphStart: options.paragraphStart,
+                paragraphEnd: options.paragraphEnd ?? options.paragraphStart,
               },
         );
         setEditor(null);
         setEditorError("");
-        if (nextMemberships[0]) {
-          setExpanded((previous) => new Set(previous).add(nextMemberships[0].id));
+        if (sectionId) {
+          setExpanded((previous) => new Set(previous).add(sectionId));
         }
-        writeJson(LAST_KEY, {
-          sectionId: nextMemberships[0]?.id ?? null,
-          articleId,
-        });
+        writeJson(LAST_KEY, { sectionId, articleId });
       } catch (cause) {
-        notify(errorMessage(cause), "error");
+        if (openArticleRequestRef.current === requestId) {
+          notify(errorMessage(cause), "error");
+        }
       }
     },
     [api, editor, saveEditor, notify],
@@ -669,7 +666,7 @@ export function App({
                 })
               }
               onSelectArticle={(sectionId, articleId) =>
-                void selectArticle(sectionId, articleId)
+                void openArticle(articleId, { sectionId })
               }
               onOpenPicker={(sectionId, opener) =>
                 openPicker(sectionId, [], opener)
@@ -749,7 +746,7 @@ export function App({
               sections={sections}
               currentSectionId={currentSectionId}
               loading={libraryLoading}
-              onOpenArticle={(articleId) => void openArticleFromLibrary(articleId)}
+              onOpenArticle={(articleId) => void openArticle(articleId)}
               onOpenPicker={(target, initialIds, opener) =>
                 openPicker(target, initialIds, opener)
               }
@@ -767,7 +764,7 @@ export function App({
               api={api}
               language={languageService}
               onOpenArticle={(articleId, paragraphStart, paragraphEnd) =>
-                void openArticleFromLibrary(articleId, paragraphStart, paragraphEnd)
+                void openArticle(articleId, { paragraphStart, paragraphEnd })
               }
               notify={notify}
             />
@@ -777,7 +774,7 @@ export function App({
               language={languageService}
               coach={coach}
               onOpenArticle={(articleId, paragraphStart, paragraphEnd) =>
-                void openArticleFromLibrary(articleId, paragraphStart, paragraphEnd)
+                void openArticle(articleId, { paragraphStart, paragraphEnd })
               }
               notify={notify}
             />
@@ -801,6 +798,14 @@ export function App({
                 setCurrentArticle(null);
                 setParagraphTarget(null);
                 setEditor(null);
+                setEssaySession({
+                  documentId: null,
+                  text: "",
+                  result: null,
+                  dirty: false,
+                  pendingId: null,
+                });
+                window.localStorage.removeItem("yuejian.essay.selectedDocumentId");
                 writeJson(LAST_KEY, { sectionId: null, articleId: null });
               }}
             />

@@ -1,5 +1,5 @@
-import { beforeEach, describe, expect, it } from "vitest";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { App } from "./App";
 import { createMemoryStorage, createMockApi, type StorageLike } from "./data/mock";
@@ -253,6 +253,35 @@ describe("本机阅读骨架", () => {
         /这个分区还没有文章/,
       ),
     ).toBeInTheDocument();
+  });
+
+  it("连续打开文章时只应用最后一次点击，迟到的旧响应不覆盖", async () => {
+    const api = createMockApi(createMemoryStorage());
+    const first = await api.pasteArticle({ title: "Article A", text: "Body A." });
+    const second = await api.pasteArticle({ title: "Article B", text: "Body B." });
+    await api.pasteArticle({ title: "Article C", text: "Body C." });
+    const originalGet = api.getArticle;
+    const secondDetail = await originalGet(second.id);
+    let resolveSecond!: (value: Awaited<ReturnType<typeof originalGet>>) => void;
+    const pendingSecond = new Promise<typeof secondDetail>((resolve) => {
+      resolveSecond = resolve;
+    });
+    const user = userEvent.setup();
+    render(<App api={api} />);
+    await findParagraph("Body A.");
+    vi.spyOn(api, "getArticle").mockImplementation((id) =>
+      id === second.id ? pendingSecond : originalGet(id),
+    );
+
+    await user.click(screen.getByText("Article B"));
+    await user.click(screen.getByText("Article C"));
+    await findParagraph("Body C.");
+    await act(async () => {
+      resolveSecond(secondDetail);
+    });
+    expect(paragraphTexts()).toEqual(["Body C."]);
+    expect((await api.listSectionArticles("default-section")).map((article) => article.id))
+      .toContain(first.id);
   });
 
   it("分区 A 取消勾选后从分区 B 重开不会误加文章", async () => {

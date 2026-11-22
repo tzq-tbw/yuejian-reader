@@ -526,6 +526,53 @@ describe("精读工作台", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("全文翻译最多同时派发三段，完成一段后才补下一段", async () => {
+    const api = createMockApi(createMemoryStorage());
+    await api.pasteArticle({
+      title: "Long Article",
+      text: Array.from({ length: 7 }, (_, index) => `Paragraph ${index + 1}.`).join("\n\n"),
+    });
+    const fake = createFakeLanguage();
+    const user = userEvent.setup();
+    render(<App api={api} language={fake.service} />);
+    await waitFor(() => expect(document.querySelectorAll("p[data-i]")).toHaveLength(7));
+
+    await user.click(screen.getByRole("button", { name: "全文翻译" }));
+    expect(fake.translateCalls).toHaveLength(3);
+    await act(async () => {
+      fake.translateCalls[0].deferred.resolve(
+        makeTranslation(fake.translateCalls[0].input, "第一段译文"),
+      );
+    });
+    await waitFor(() => expect(fake.translateCalls).toHaveLength(4));
+    expect(fake.translateCalls[3].input.text).toBe("Paragraph 4.");
+  });
+
+  it("全文翻译切换文章后停止派发剩余段落", async () => {
+    const api = createMockApi(createMemoryStorage());
+    await api.pasteArticle({
+      title: "Long Article",
+      text: Array.from({ length: 6 }, (_, index) => `Paragraph ${index + 1}.`).join("\n\n"),
+    });
+    await api.pasteArticle({ title: "Short Article", text: "A different article." });
+    const fake = createFakeLanguage();
+    const user = userEvent.setup();
+    render(<App api={api} language={fake.service} />);
+    await waitFor(() => expect(document.querySelectorAll("p[data-i]")).toHaveLength(6));
+
+    await user.click(screen.getByRole("button", { name: "全文翻译" }));
+    expect(fake.translateCalls).toHaveLength(3);
+    await user.click(screen.getByText("Short Article"));
+    await waitFor(() => expect(paragraphTexts()).toEqual(["A different article."]));
+    await act(async () => {
+      for (const call of fake.translateCalls) {
+        call.deferred.resolve(makeTranslation(call.input, "旧文章译文"));
+      }
+    });
+    expect(fake.translateCalls).toHaveLength(3);
+    expect(screen.queryByText("旧文章译文")).not.toBeInTheDocument();
+  });
+
   it("单段重试中发起其他请求且后者失败，该行仍可重试", async () => {
     const { fake, user, inspector } = await setup();
     await user.click(screen.getByRole("button", { name: "全文翻译" }));

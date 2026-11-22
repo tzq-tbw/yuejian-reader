@@ -1057,6 +1057,7 @@ export function createMockApi(storage: StorageLike = createMemoryStorage()): Rea
         sequenceNo: state.essayDocuments.reduce((max, item) => Math.max(max, item.sequenceNo), 0) + 1,
         name: input.name?.trim() ? validEssayName(input.name) : "未命名作文",
         text: validEssayText(input.text),
+        revisionCount: 0,
         revisions: [],
         createdAt: now,
         updatedAt: now,

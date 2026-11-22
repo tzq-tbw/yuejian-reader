@@ -15,8 +15,9 @@ import type { ReaderApi, WordlistSummary } from "../data/types";
 import {
   DEFAULT_MODEL_CONFIG,
   MODEL_PROVIDER_PRESETS,
+  loadModelApiKey,
+  persistModelService,
   readStoredModelService,
-  saveStoredModelService,
   type ModelProvider,
   type StoredModelService,
 } from "../language/config";
@@ -75,6 +76,18 @@ export function SettingsPage({
     void refreshWordlists();
   }, [refreshWordlists]);
 
+  useEffect(() => {
+    let cancelled = false;
+    loadModelApiKey().then((apiKey) => {
+      if (!cancelled) setModelDraft((current) => ({ ...current, apiKey }));
+    }).catch((cause) => {
+      if (!cancelled) notify(`读取 API Key 失败：${errorMessage(cause)}`, "error");
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [notify]);
+
   async function run(key: string, action: () => Promise<void>) {
     if (busy) return;
     setBusy(key);
@@ -104,7 +117,7 @@ export function SettingsPage({
       if (modelDraft.provider !== "magpie" && !modelDraft.apiKey.trim()) {
         throw new Error("直连供应商需要填写 API Key");
       }
-      saveStoredModelService(modelDraft);
+      await persistModelService(modelDraft);
       notify(`模型服务已保存：${MODEL_PROVIDER_PRESETS[modelDraft.provider].label}`);
     });
 
@@ -225,7 +238,7 @@ export function SettingsPage({
                 <input type="password" autoComplete="new-password" placeholder={modelDraft.provider === "magpie" ? "默认代理无需填写" : "输入供应商 API Key"} value={modelDraft.apiKey} onChange={(event) => setModelDraft((current) => ({ ...current, apiKey: event.target.value }))} />
               </label>
               <div className="modelServiceFoot">
-                <span>API Key 暂存于本机 localStorage，阶段 5 迁移到系统凭据。</span>
+                <span>桌面端 API Key 保存于应用数据目录的独立受限文件；浏览器预览仅保留在当前会话。系统凭据存储将在阶段 5 接入。</span>
                 <button type="button" className="primary" disabled={busy !== null} onClick={() => void saveModelService()}>
                   <Check size={15} /> {busy === "model" ? "保存中…" : "保存模型配置"}
                 </button>

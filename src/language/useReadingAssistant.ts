@@ -275,7 +275,8 @@ export function useReadingAssistant(
   function translateArticle(): void {
     const current = articleRef.current;
     if (!current || !current.paragraphs.length) return;
-    const target = articleTarget(current);
+    const articleToTranslate = current;
+    const target = articleTarget(articleToTranslate);
     const key = `${target.articleId}:${target.version}`;
     restoreInterruptedParagraphRetry();
     const seq = ++seqRef.current;
@@ -287,36 +288,52 @@ export function useReadingAssistant(
     }));
 
     const retry = () => translateArticle();
-    const requests = current.paragraphs.map(async (text, index) => {
-      const paragraph = paragraphTarget(current, index);
-      try {
-        const response = await serviceRef.current.translate({
-          target: paragraph,
-          text,
-          paragraphs: [{ index, text }],
-          articleTitle: current.title,
-        });
-        return {
-          paragraph: index,
-          source: text,
-          translation: response.translation,
-          error: null as string | null,
-          ok: true,
-        };
-      } catch (cause) {
-        return {
-          paragraph: index,
-          source: text,
-          translation: "",
-          error: messageOf(cause),
-          ok: false,
-        };
+    const rows: TranslationRow[] = articleToTranslate.paragraphs.map((text, index) => ({
+      paragraph: index,
+      source: text,
+      translation: "",
+      error: null,
+      loading: true,
+    }));
+    let nextIndex = 0;
+    async function worker() {
+      while (isCurrent(seq, target)) {
+        const index = nextIndex;
+        nextIndex += 1;
+        if (index >= articleToTranslate.paragraphs.length) return;
+        const text = articleToTranslate.paragraphs[index];
+        const paragraph = paragraphTarget(articleToTranslate, index);
+        try {
+          const response = await serviceRef.current.translate({
+            target: paragraph,
+            text,
+            paragraphs: [{ index, text }],
+            articleTitle: articleToTranslate.title,
+          });
+          rows[index] = {
+            paragraph: index,
+            source: text,
+            translation: response.translation,
+            error: null,
+            loading: false,
+          };
+        } catch (cause) {
+          rows[index] = {
+            paragraph: index,
+            source: text,
+            translation: "",
+            error: messageOf(cause),
+            loading: false,
+          };
+        }
       }
-    });
+    }
 
-    Promise.all(requests).then((rows) => {
+    Promise.all(
+      Array.from({ length: Math.min(3, articleToTranslate.paragraphs.length) }, () => worker()),
+    ).then(() => {
       if (!isCurrent(seq, target)) return;
-      const failures = rows.filter((row) => !row.ok);
+      const failures = rows.filter((row) => row.error !== null);
       if (failures.length === rows.length) {
         setState((previous) => ({
           key,
@@ -333,15 +350,9 @@ export function useReadingAssistant(
         kind: "translation",
         target,
         mode: "article",
-        source: current.paragraphs.join("\n\n"),
+        source: articleToTranslate.paragraphs.join("\n\n"),
         translation: "",
-        rows: rows.map((row): TranslationRow => ({
-          paragraph: row.paragraph,
-          source: row.source,
-          translation: row.translation,
-          error: row.error,
-          loading: false,
-        })),
+        rows,
       };
       resultRef.current = result;
       setState({ key, result, pending: null, error: null });

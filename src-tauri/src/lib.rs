@@ -1,3 +1,4 @@
+mod credentials;
 mod db;
 mod essay_history;
 mod review;
@@ -11,7 +12,8 @@ use db::{
     Section, UpdateArticleInput, WordFavorite,
 };
 use essay_history::{
-    AddEssayRevisionInput, CreateEssayDocumentInput, EssayDocument, EssayRevision,
+    AddEssayRevisionInput, CreateEssayDocumentInput, EssayDocument, EssayDocumentSummary,
+    EssayRevision,
 };
 use std::sync::Mutex;
 use tauri::{Manager, State};
@@ -125,6 +127,24 @@ fn with_conn<T>(
         .lock()
         .map_err(|_| "数据库状态异常，请重启应用".to_string())?;
     action(&mut guard)
+}
+
+#[tauri::command]
+fn save_model_api_key(app: tauri::AppHandle, api_key: String) -> Result<(), String> {
+    let data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| format!("定位应用数据目录失败：{error}"))?;
+    credentials::write_api_key(&data_dir, &api_key)
+}
+
+#[tauri::command]
+fn get_model_api_key(app: tauri::AppHandle) -> Result<String, String> {
+    let data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| format!("定位应用数据目录失败：{error}"))?;
+    credentials::read_api_key(&data_dir)
 }
 
 #[tauri::command]
@@ -326,6 +346,16 @@ fn delete_wordlist(state: State<'_, DbState>, id: String) -> Result<bool, String
 }
 
 #[tauri::command]
+fn list_essay_summaries(state: State<'_, DbState>) -> Result<Vec<EssayDocumentSummary>, String> {
+    with_conn(&state, |conn| essay_history::list_essay_summaries(conn))
+}
+
+#[tauri::command]
+fn get_essay_document(state: State<'_, DbState>, id: i64) -> Result<EssayDocument, String> {
+    with_conn(&state, |conn| essay_history::get_essay_document(conn, id))
+}
+
+#[tauri::command]
 fn list_essay_documents(state: State<'_, DbState>) -> Result<Vec<EssayDocument>, String> {
     with_conn(&state, |conn| essay_history::list_essay_documents(conn))
 }
@@ -388,6 +418,8 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            save_model_api_key,
+            get_model_api_key,
             list_sections,
             create_section,
             rename_section,
@@ -416,6 +448,8 @@ pub fn run() {
             list_words,
             import_wordlist,
             delete_wordlist,
+            list_essay_summaries,
+            get_essay_document,
             list_essay_documents,
             create_essay_document,
             rename_essay_document,

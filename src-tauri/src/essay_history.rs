@@ -127,15 +127,45 @@ pub fn get_essay_document(conn: &Connection, id: i64) -> Result<EssayDocument, S
             created_at,
         });
     }
+    let revision_count = revisions.len() as i64;
     Ok(EssayDocument {
         id,
         sequence_no,
         name,
         text,
+        revision_count,
         revisions,
         created_at,
         updated_at,
     })
+}
+
+pub fn list_essay_summaries(conn: &Connection) -> Result<Vec<EssayDocumentSummary>, String> {
+    let mut statement = conn
+        .prepare(
+            "SELECT d.id, d.sequence_no, d.name, d.text, COUNT(r.id),
+                    d.created_at, d.updated_at
+             FROM essay_documents d
+             LEFT JOIN essay_revisions r ON r.document_id = d.id
+             GROUP BY d.id
+             ORDER BY d.sequence_no",
+        )
+        .map_err(|error| format!("读取作文列表失败：{error}"))?;
+    let rows = statement
+        .query_map([], |row| {
+            Ok(EssayDocumentSummary {
+                id: row.get(0)?,
+                sequence_no: row.get(1)?,
+                name: row.get(2)?,
+                text: row.get(3)?,
+                revision_count: row.get(4)?,
+                created_at: row.get(5)?,
+                updated_at: row.get(6)?,
+            })
+        })
+        .map_err(|error| format!("读取作文列表失败：{error}"))?;
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|error| format!("读取作文列表失败：{error}"))
 }
 
 pub fn list_essay_documents(conn: &Connection) -> Result<Vec<EssayDocument>, String> {
@@ -336,6 +366,34 @@ mod tests {
             .unwrap();
         assert_eq!(remaining, 0);
         assert!(!delete_essay_document(&conn, document.id).unwrap());
+    }
+
+    #[test]
+    fn summaries_omit_revision_payloads_and_detail_loads_them_on_demand() {
+        let mut conn = memory_db();
+        let document = create_essay_document(&mut conn, input("Essay A.")).unwrap();
+        add_essay_revision(
+            &mut conn,
+            AddEssayRevisionInput {
+                document_id: document.id,
+                text: "Essay A revised.".to_string(),
+                result: json!({ "issues": [], "polished": "Polished A." }),
+            },
+        )
+        .unwrap();
+        create_essay_document(&mut conn, input("Essay B.")).unwrap();
+
+        let summaries = list_essay_summaries(&conn).unwrap();
+        assert_eq!(summaries.len(), 2);
+        assert_eq!(summaries[0].text, "Essay A revised.");
+        assert_eq!(summaries[0].revision_count, 1);
+        assert_eq!(summaries[1].revision_count, 0);
+        let serialized = serde_json::to_string(&summaries).unwrap();
+        assert!(!serialized.contains("revisions"));
+        assert!(!serialized.contains("Polished A."));
+        let detail = get_essay_document(&conn, document.id).unwrap();
+        assert_eq!(detail.revisions.len(), 1);
+        assert_eq!(detail.revision_count, 1);
     }
 
     #[test]

@@ -209,6 +209,88 @@ describe("复习窗口持久化", () => {
     expect(await api.listDueWordFavorites(today)).toHaveLength(2);
   });
 
+  it("评分前发现跨午夜会先重载新日队列，不把旧卡评分记到昨天", async () => {
+    const yesterday = "2026-11-20";
+    const today = "2026-11-21";
+    let currentDate = yesterday;
+    const api = createMockApi(createMemoryStorage());
+    const article = await api.pasteArticle({ title: "Midnight Rating", text: "Review source." });
+    await seedReviewWord(api, article.id, "address", addLocalDays(yesterday, -1));
+    await seedReviewWord(api, article.id, "envelope", yesterday);
+    const record = vi.spyOn(api, "recordReviewEvent");
+    const user = userEvent.setup();
+    render(
+      <ReviewPage
+        api={api}
+        getToday={() => currentDate}
+        onOpenArticle={vi.fn()}
+        notify={vi.fn()}
+      />,
+    );
+
+    expect(await screen.findByText("address")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "揭晓" }));
+    currentDate = today;
+    await user.click(screen.getByRole("button", { name: "记得" }));
+
+    expect(await screen.findByText("今日 2 张 · 待复习 2 张 · 本轮记得 0 张")).toBeInTheDocument();
+    expect(record).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "揭晓" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "揭晓" }));
+    await user.click(screen.getByRole("button", { name: "记得" }));
+    await waitFor(() => expect(record).toHaveBeenCalledTimes(1));
+    expect(record.mock.calls[0][0].localDate).toBe(today);
+  });
+
+  it("刷新保留当前顺序并追加新到期卡，旧 A 加新 A、B 得到 A、B", async () => {
+    const { api, user } = await renderAppWithStorage();
+    const article = await api.pasteArticle({ title: "Merge Queue", text: "Review source." });
+    await seedReviewWord(api, article.id, "address", addLocalDays(TODAY, -1));
+    await openReview(user);
+    expect(await screen.findByText("address")).toBeInTheDocument();
+
+    await seedReviewWord(api, article.id, "envelope", addLocalDays(TODAY, -1));
+    await user.click(screen.getByRole("button", { name: "刷新词语复习" }));
+    expect(await screen.findByText(/今日 2 张 · 待复习 2 张/)).toBeInTheDocument();
+    expect(screen.getByText("address")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "揭晓" }));
+    await user.click(screen.getByRole("button", { name: "记得" }));
+    expect(await screen.findByText("envelope")).toBeInTheDocument();
+    expect(screen.getByText("今日 2 张 · 待复习 1 张 · 本轮记得 1 张")).toBeInTheDocument();
+  });
+
+  it("忘记后的本轮队列同时驱动待复习数、忘记次数和 AI 输入", async () => {
+    const api = createMockApi(createMemoryStorage());
+    const article = await api.pasteArticle({ title: "Shared Round State", text: "Review source." });
+    await seedReviewWord(api, article.id, "address", addLocalDays(TODAY, -1));
+    await seedReviewWord(api, article.id, "envelope", addLocalDays(TODAY, -1));
+    const coach = {
+      suggestFocus: vi.fn().mockRejectedValue(new Error("离线")),
+    };
+    const user = userEvent.setup();
+    render(
+      <ReviewPage
+        api={api}
+        coach={coach}
+        onOpenArticle={vi.fn()}
+        notify={vi.fn()}
+      />,
+    );
+    expect(await screen.findByText("address")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "揭晓" }));
+    await user.click(screen.getByRole("button", { name: "忘了" }));
+    expect(await screen.findByText("envelope")).toBeInTheDocument();
+    expect(screen.getByText("今日 2 张 · 待复习 2 张 · 本轮记得 0 张")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "生成提醒" }));
+    await screen.findByText(/历史累计忘记 1 次/);
+    expect(coach.suggestFocus).toHaveBeenCalledTimes(1);
+    const roundCards = coach.suggestFocus.mock.calls[0][0];
+    expect(roundCards.map((card: { word: string }) => card.word)).toEqual(["envelope", "address"]);
+    expect(roundCards[1].forgottenCount).toBe(1);
+    expect(roundCards[1].forgottenToday).toBe(true);
+  });
+
   it("长难句窗口：先原文后揭晓，译文解析随收藏持久保存", async () => {
     const scrollIntoView = vi.fn();
     window.HTMLElement.prototype.scrollIntoView = scrollIntoView;

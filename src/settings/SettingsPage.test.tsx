@@ -147,7 +147,8 @@ describe("设置页", () => {
     await user.type(key, "deepseek-test-key");
     await user.click(screen.getByRole("button", { name: "保存模型配置" }));
     expect(notify).toHaveBeenCalledWith("模型服务已保存：DeepSeek");
-    expect(window.localStorage.getItem("yuejian.modelService")).toContain("deepseek-test-key");
+    expect(window.localStorage.getItem("yuejian.modelService")).not.toContain("deepseek-test-key");
+    expect(JSON.parse(window.localStorage.getItem("yuejian.modelService")!).apiKey).toBeUndefined();
 
     await user.selectOptions(provider, "qwen");
     expect(screen.getByLabelText("Base URL")).toHaveValue("https://dashscope.aliyuncs.com/compatible-mode/v1");

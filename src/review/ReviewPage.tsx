@@ -61,7 +61,6 @@ function WordReviewWindow({
   notify: (text: string, kind?: "info" | "error") => void;
 }) {
   const [today, setToday] = useState(getToday);
-  const [due, setDue] = useState<WordFavorite[]>([]);
   const [queue, setQueue] = useState<WordFavorite[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -87,7 +86,6 @@ function WordReviewWindow({
     seenRef.current = new Set();
     revealSeqRef.current = 0;
     roundRef.current = `round-${today}-${Math.random().toString(36).slice(2, 10)}`;
-    setDue([]);
     setQueue([]);
     setTotal(0);
     setRememberedCount(0);
@@ -116,11 +114,17 @@ function WordReviewWindow({
           if (!existing.has(id)) seenRef.current.delete(id);
         }
       }
-      setDue(cards);
       setQueue((previous) => {
-        if (!loadedRef.current || previous.length === 0) return cards;
-        const ids = new Set(cards.map((card) => card.id));
-        return previous.filter((card) => ids.has(card.id));
+        if (!loadedRef.current) return cards;
+        const cardsById = new Map(cards.map((card) => [card.id, card]));
+        const retained = previous
+          .filter((card) => cardsById.has(card.id))
+          .map((card) => cardsById.get(card.id)!);
+        const retainedIds = new Set(retained.map((card) => card.id));
+        return [
+          ...retained,
+          ...cards.filter((card) => !retainedIds.has(card.id)),
+        ];
       });
       setTotal(seenRef.current.size);
       loadedRef.current = true;
@@ -167,12 +171,18 @@ function WordReviewWindow({
     inFlightRef.current = true;
     setBusy(true);
     try {
+      const ratingDate = getToday();
+      if (ratingDate !== activeDateRef.current) {
+        activeDateRef.current = ratingDate;
+        setToday(ratingDate);
+        return;
+      }
       await api.recordReviewEvent({
         favoriteId: current.id,
         roundId: roundRef.current,
         revealId,
         rating,
-        localDate: today,
+        localDate: ratingDate,
       });
       setRevealed(false);
       setRevealId(null);
@@ -208,11 +218,11 @@ function WordReviewWindow({
   }
 
   async function suggestFocus() {
-    if (focusLoading || due.length === 0) return;
+    if (focusLoading || queue.length === 0) return;
     setFocusLoading(true);
     setFocusError("");
     try {
-      const words = await coach.suggestFocus(due);
+      const words = await coach.suggestFocus(queue);
       setFocusWords(words);
     } catch (cause) {
       setFocusWords(null);
@@ -222,7 +232,7 @@ function WordReviewWindow({
     }
   }
 
-  const historyForgets = due.reduce(
+  const historyForgets = queue.reduce(
     (sum, card) => sum + card.forgottenCount,
     0,
   );
@@ -260,7 +270,7 @@ function WordReviewWindow({
           <span>从到期词指出近期易忘词</span>
           <button
             type="button"
-            disabled={focusLoading || due.length === 0}
+            disabled={focusLoading || queue.length === 0}
             onClick={() => void suggestFocus()}
           >
             {focusLoading ? "分析中…" : "生成提醒"}

@@ -1,10 +1,10 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { ChatTransport, ModelConfig } from "./types";
-import { joinUrl, resolveModelConfig } from "./config";
+import { joinUrl, loadModelConfig } from "./config";
 
-type ModelConfigSource = ModelConfig | (() => ModelConfig);
+type ModelConfigSource = ModelConfig | (() => ModelConfig | Promise<ModelConfig>);
 
-function currentConfig(source: ModelConfigSource): ModelConfig {
+async function currentConfig(source: ModelConfigSource): Promise<ModelConfig> {
   return typeof source === "function" ? source() : source;
 }
 
@@ -15,12 +15,12 @@ function excerpt(text: string, limit = 300): string {
 
 /** 浏览器预览通道；桌面端默认走 Rust 命令，避免 WebView 的 CORS 限制。 */
 export function createFetchTransport(
-  configSource: ModelConfigSource = () => resolveModelConfig(),
+  configSource: ModelConfigSource = loadModelConfig,
   fetchImpl: typeof fetch = fetch,
 ): ChatTransport {
   return {
     async chat(call) {
-      const config = currentConfig(configSource);
+      const config = await currentConfig(configSource);
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), config.timeoutMs);
       try {
@@ -71,11 +71,11 @@ export function createFetchTransport(
 
 /** 桌面端通道：由 Rust 发出 HTTP 请求，密钥仅随本次调用传递。 */
 export function createTauriTransport(
-  configSource: ModelConfigSource = () => resolveModelConfig(),
+  configSource: ModelConfigSource = loadModelConfig,
 ): ChatTransport {
   return {
     async chat(call) {
-      const config = currentConfig(configSource);
+      const config = await currentConfig(configSource);
       return invoke<unknown>("model_chat", {
         input: {
           baseUrl: config.baseUrl,
@@ -92,7 +92,7 @@ export function createTauriTransport(
 }
 
 export function createDefaultTransport(
-  config: ModelConfigSource = () => resolveModelConfig(),
+  config: ModelConfigSource = loadModelConfig,
 ): ChatTransport {
   const inTauri =
     typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
