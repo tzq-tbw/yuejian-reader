@@ -3,7 +3,8 @@
 param([Parameter(Mandatory)][string]$Installer)
 
 $ErrorActionPreference = 'Stop'
-$database = Join-Path $env:APPDATA 'com.yuejian.reader'
+$PSNativeCommandUseErrorActionPreference = $false
+$database = Join-Path ([Environment]::GetFolderPath('ApplicationData')) 'com.yuejian.reader'
 if (Test-Path -LiteralPath $database) { throw 'A clean Windows user profile is required' }
 $setupPath = (Resolve-Path -LiteralPath $Installer).Path
 $target = Join-Path $env:LOCALAPPDATA "YuejianStage5-$PID"
@@ -37,7 +38,10 @@ with closing(sqlite3.connect(db, timeout=5)) as conn, conn:
         """)
     else:
         assert conn.execute("PRAGMA quick_check").fetchone()[0] == "ok"
-        assert conn.execute("SELECT GROUP_CONCAT(version) FROM schema_migrations").fetchone()[0] == "1,2,3,4,5,6"
+        versions = [row[0] for row in conn.execute("SELECT version FROM schema_migrations ORDER BY version")]
+        if versions != [1, 2, 3, 4, 5, 6]:
+            print(f"Waiting for migration: observed versions {versions}")
+            sys.exit(2)
         article = conn.execute("SELECT title, paragraphs FROM articles").fetchone()
         assert article == ("Stage 5 migration sample", '["We need to address the problem."]')
         assert conn.execute("SELECT COUNT(*) FROM section_articles").fetchone()[0] == 1
@@ -48,15 +52,20 @@ if ($LASTEXITCODE -ne 0) { throw 'Could not create the old database fixture' }
 foreach ($attempt in 1, 2) {
     $app = Start-Process -FilePath $binary -PassThru
     try {
+        $ready = $false
         $deadline = (Get-Date).AddSeconds(60)
         do {
             Start-Sleep -Milliseconds 500
             $app.Refresh()
             if ($app.HasExited) { throw "Installed application exited with $($app.ExitCode)" }
-        } until ($app.MainWindowHandle -ne 0 -or (Get-Date) -gt $deadline)
-        if ($app.MainWindowHandle -eq 0) { throw 'Installed application did not open a window' }
-        $exercise | python - check
-        if ($LASTEXITCODE -ne 0) { throw 'Database migration or persistence check failed' }
+            if ($app.MainWindowHandle -eq 0) { continue }
+            $exercise | python - check
+            if ($LASTEXITCODE -eq 0) { $ready = $true; break }
+            if ($LASTEXITCODE -ne 2) { throw 'Database migration or persistence check failed' }
+        } while ((Get-Date) -lt $deadline)
+        if (!$ready) {
+            throw 'Installed application did not finish starting and migrating within 60 seconds'
+        }
         Write-Host "Launch $attempt passed: window, migration versions 1–6, article and default section."
     } finally {
         if (!$app.HasExited) {
