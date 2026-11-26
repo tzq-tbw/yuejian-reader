@@ -99,6 +99,9 @@ fn maps_response_timeout_and_connection_refusal() {
     let error = tauri::async_runtime::block_on(model_chat(input(url.clone(), ""))).unwrap_err();
     assert!(error.contains("超时"), "{error}");
     drop(listener);
-    let error = tauri::async_runtime::block_on(model_chat(input(url, ""))).unwrap_err();
+    // Windows may retry a refused loopback connection before reporting refusal.
+    let mut refusal = input(url, "");
+    refusal.timeout_ms = Some(8_000);
+    let error = tauri::async_runtime::block_on(model_chat(refusal)).unwrap_err();
     assert!(error.contains("无法连接"), "{error}");
 }
