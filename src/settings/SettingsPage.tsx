@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
+import { invoke, isTauri } from "@tauri-apps/api/core";
+import { version } from "../../src-tauri/tauri.conf.json";
 import {
   Check,
   DatabaseBackup,
@@ -194,7 +196,7 @@ export function SettingsPage({
     <div className="libraryMain settingsMain">
       <div className="libTop">
         <h1>设置</h1>
-        <span className="pageNote">数据保存在本机 · 当前版本 0.1.0</span>
+          <span className="pageNote">数据保存在本机 · 当前版本 {version}</span>
       </div>
       <div className="libScroll">
         <div className="libInner settingsInner">
@@ -238,7 +240,7 @@ export function SettingsPage({
                 <input type="password" autoComplete="new-password" placeholder={modelDraft.provider === "magpie" ? "默认代理无需填写" : "输入供应商 API Key"} value={modelDraft.apiKey} onChange={(event) => setModelDraft((current) => ({ ...current, apiKey: event.target.value }))} />
               </label>
               <div className="modelServiceFoot">
-                <span>桌面端 API Key 保存于应用数据目录的独立受限文件；浏览器预览仅保留在当前会话。系统凭据存储将在阶段 5 接入。</span>
+                <span>Windows 桌面端将 API Key 保存在当前用户的凭据管理器中；浏览器预览仅保留在当前会话。</span>
                 <button type="button" className="primary" disabled={busy !== null} onClick={() => void saveModelService()}>
                   <Check size={15} /> {busy === "model" ? "保存中…" : "保存模型配置"}
                 </button>
@@ -331,12 +333,18 @@ export function SettingsPage({
           <section className="settingsSection" aria-labelledby="settings-update">
             <div className="settingsHeading">
               <Settings size={19} />
-              <div><h2 id="settings-update">应用更新</h2><p>当前版本 0.1.0</p></div>
+                <div><h2 id="settings-update">应用更新</h2><p>当前版本 {version}</p></div>
             </div>
             <div className="settingsRow">
-              <div><strong>检查上游更新</strong><span>阶段 5 将接入 Tauri updater 与 GitHub Releases。</span></div>
-              <button type="button" onClick={() => notify("当前版本 0.1.0；自动检查更新将在阶段 5 接入")}>
-                <RefreshCw size={15} /> 检查更新
+                <div><strong>GitHub Releases</strong><span>桌面版启动时自动检查。发现新版后，校验签名并安装。</span></div>
+                <button type="button" disabled={!!busy} onClick={() => run("update", async () => {
+                  if (!isTauri()) {
+                    notify("请在阅间桌面版中检查更新");
+                    return;
+                  }
+                  notify(await invoke<string>("check_app_update"));
+                })}>
+                  <RefreshCw size={15} /> {busy === "update" ? "正在检查…" : "检查更新"}
               </button>
             </div>
           </section>

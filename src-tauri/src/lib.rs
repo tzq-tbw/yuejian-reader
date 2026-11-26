@@ -3,6 +3,7 @@ mod db;
 mod essay_history;
 mod review;
 mod settings;
+mod updater;
 mod wordlists;
 
 use db::{
@@ -409,15 +410,26 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             let data_dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&data_dir)?;
             let conn = db::open(&data_dir.join("reader.db"))
                 .map_err(std::io::Error::other)?;
             app.manage(DbState::new(conn));
+            #[cfg(not(debug_assertions))]
+            {
+                let handle = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    if let Err(err) = updater::check_app_update(handle).await {
+                        eprintln!("{err}");
+                    }
+                });
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            updater::check_app_update,
             save_model_api_key,
             get_model_api_key,
             list_sections,
@@ -462,6 +474,9 @@ pub fn run() {
         .run(tauri::generate_context!())
         .expect("error while running 阅间");
 }
+
+#[cfg(test)]
+mod model_transport_tests;
 
 #[cfg(test)]
 mod tests {

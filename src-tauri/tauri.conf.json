@@ -28,6 +28,7 @@
   },
   "bundle": {
     "active": true,
+    "createUpdaterArtifacts": true,
     "targets": ["nsis"],
     "icon": [
       "icons/32x32.png",
@@ -39,6 +40,13 @@
       "webviewInstallMode": {
         "type": "downloadBootstrapper"
       }
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDY3MTc5MEZGNzI5NThCMTIKUldRU2k1VnkvNUFYWjlERTlHN3R5d1dRVU1lYUFacjFHbWVkS0FGZGkxNTNFT0ZoSExBdmMycEEK",
+      "endpoints": ["https://github.com/tzq-tbw/yuejian-reader/releases/latest/download/latest.json"],
+      "windows": { "installMode": "quiet" }
     }
   }
 }

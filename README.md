@@ -1,6 +1,16 @@
 # 英语精读 · 阅间
 
-Windows 桌面精读应用（阶段 3：精读工作台）。React + TypeScript + Tauri 2 + SQLite，视觉基准沿用 `reader-preview/` 的已确认样品。当前支持粘贴建篇、PDF 真题导入、资料库、阅读分区、正文编辑保存、双侧栏收起，以及四级词表标色、划词工具条、词卡、段落/全文翻译和句法解析。
+Windows 桌面英语精读应用。支持真题 PDF 导入、划词和句法解析、收藏复习、作文批改。桌面端使用 React、TypeScript、Tauri 2 和 SQLite。
+
+## 安装 Windows 版
+
+从 [GitHub Releases](https://github.com/tzq-tbw/yuejian-reader/releases/latest) 下载 `Yuejian-0.1.0-x64-setup.exe`，双击按提示安装。适用于 x64 Windows。缺少 WebView2 运行时时，安装程序会联网获取。
+
+首次使用 AI 时，在设置中配置本机代理或自己的模型服务。Windows 桌面版通过凭据管理器保存 API Key。安装版启动时会检查更新，也可在设置里点“检查更新”。更新由 Tauri 核验安装包签名后安装。
+
+调用流程和答辩演示见 [桌面 AI 调用学习与展示](work/桌面AI调用学习与展示.md)。
+
+内置考试词表由 [ECDICT 固定版本](https://github.com/skywind3000/ECDICT/tree/39cfb9672c0906b63569e0453c2e6abfb9ab182a)筛选整理，许可随安装包发布。 [ECDICT 许可](src-tauri/wordlists/ECDICT-LICENSE.txt)
 
 ## 桌面版启动
 
@@ -25,12 +35,12 @@ npm run build
 npm run tauri:build
 ~~~
 
-安装包输出在 `src-tauri/target/release/bundle/nsis/`。阶段 1 只在开发窗口验证；安装包构建属于阶段 5。
+安装包输出在 `src-tauri/target/release/bundle/nsis/`。发布者可运行 `pwsh -NoProfile -File scripts/build-windows.ps1` 生成签名安装包、签名及 `latest.json`。脚本从签名环境变量或当前 Windows 用户的签名目录取密钥。验收命令和实测记录见 [阶段 5 交付记录](work/CHANGES-T005.md)。
 
 ## 精读模型接入（阶段 3）
 
 - 默认经本机 Magpie 代理访问 DeepSeek：`http://127.0.0.1:3425/v1`，模型 `auto/deepseek-v4.1-flash`（OpenAI 兼容格式）；桌面端模型请求由 Rust `model_chat` 命令发出，避开 WebView 的 CORS 限制。
-- 可替换配置：构建时设置 `VITE_LANGUAGE_BASE_URL`、`VITE_LANGUAGE_MODEL`。API key 仅保留构造参数占位，不提供前端环境变量入口；阶段 3 未接系统凭据存储。
+- 可在设置中修改服务地址、模型和 API Key。构建时也可通过 `VITE_LANGUAGE_BASE_URL`、`VITE_LANGUAGE_MODEL` 修改默认地址和模型。
 - 浏览器预览的 `fetch` 通道受代理 CORS 限制，模型功能以桌面版为准；断网或代理未启动时只影响侧栏结果，不阻断本地编辑。
 - 真实联调（需 Magpie 已启动）：`YUEJIAN_REAL_MODEL=1 npx vitest run src/language/realModel.test.ts --reporter=verbose`。Rust 通道可运行 `cargo test model_chat_round_trip -- --ignored`。
 

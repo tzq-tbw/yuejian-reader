@@ -255,3 +255,8 @@ Kimi 实测独立复跑 npm test 110、cargo test 29 一致。
 
 - Kimi 修 P1-2 回归：showRevision 不再动会话三字段，预览标签由 previewRevision.documentId 派生；恢复此版本一次性写 ID+正文+干净标记。+2 回归测试（跨文档预览切页、精简2 摘要断言）。负责人实测：npm test 155/158、build 通过。
 - 负责人终审：R7 全部 9 项 + 反审回归修复关闭。R7 收官。
+
+## 阶段 5 · Windows 交付
+
+- 以 GitHub 提交 afa5defb 为发布基线。产物、验证记录、断点和发布约定见 [CHANGES-T005.md](CHANGES-T005.md)。
+- 答辩主讲桌面 AI 调用，从前端选区，经 Tauri IPC 到 Rust HTTP，再回到词卡。 [学习与展示](桌面AI调用学习与展示.md)

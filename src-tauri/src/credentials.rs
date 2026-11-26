@@ -1,9 +1,15 @@
 use std::path::{Path, PathBuf};
 
+#[cfg(windows)]
+mod windows;
+#[cfg(windows)]
+pub use windows::{read_api_key, write_api_key};
+
 fn api_key_path(data_dir: &Path) -> PathBuf {
     data_dir.join("model-api-key")
 }
 
+#[cfg(not(windows))]
 pub fn write_api_key(data_dir: &Path, api_key: &str) -> Result<(), String> {
     let path = api_key_path(data_dir);
     let api_key = api_key.trim();
@@ -38,6 +44,7 @@ pub fn write_api_key(data_dir: &Path, api_key: &str) -> Result<(), String> {
     Ok(())
 }
 
+#[cfg(not(windows))]
 pub fn read_api_key(data_dir: &Path) -> Result<String, String> {
     let path = api_key_path(data_dir);
     if !path.exists() {
@@ -59,6 +66,7 @@ mod tests {
     #[test]
     fn api_key_round_trip_overwrite_and_clear() {
         let dir = temp_dir();
+        std::fs::create_dir_all(&dir).unwrap();
         write_api_key(&dir, "first-secret").unwrap();
         assert_eq!(read_api_key(&dir).unwrap(), "first-secret");
         write_api_key(&dir, "second-secret").unwrap();
@@ -79,5 +87,36 @@ mod tests {
         assert_eq!(read_api_key(&dir).unwrap(), "");
         assert!(!api_key_path(&dir).exists());
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn migrate_file_and_keep_newer_system_credential() {
+        let dir = temp_dir();
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = api_key_path(&dir);
+        std::fs::write(&path, "  legacy-example  ").unwrap();
+        assert_eq!(read_api_key(&dir).unwrap(), "legacy-example");
+        assert!(!path.exists());
+        write_api_key(&dir, "new-example").unwrap();
+        std::fs::write(&path, "stale-example").unwrap();
+        assert_eq!(read_api_key(&dir).unwrap(), "new-example");
+        assert!(!path.exists());
+        write_api_key(&dir, "").unwrap();
+        std::fs::remove_dir(&dir).unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn failed_migration_preserves_legacy_file() {
+        let dir = temp_dir();
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = api_key_path(&dir);
+        let oversized = "x".repeat(2561);
+        std::fs::write(&path, &oversized).unwrap();
+        assert!(read_api_key(&dir).is_err());
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), oversized);
+        write_api_key(&dir, "").unwrap();
+        std::fs::remove_dir(&dir).unwrap();
     }
 }

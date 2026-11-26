@@ -58,7 +58,7 @@ describe("设置页", () => {
     expect(screen.queryByRole("button", { name: "导出生词本" })).not.toBeInTheDocument();
   });
 
-  it("备份数据库并显示版本与更新占位", async () => {
+  it("备份数据库并提示从桌面版检查更新", async () => {
     const api = createMockApi(createMemoryStorage());
     const backup = vi.spyOn(api, "backupDatabase");
     const files = fileService({
@@ -72,7 +72,7 @@ describe("设置页", () => {
     expect(backup).toHaveBeenCalledWith("D:/backups/reader.db");
     expect(screen.getAllByText(/当前版本 0\.1\.0/).length).toBeGreaterThan(0);
     await user.click(screen.getByRole("button", { name: "检查更新" }));
-    expect(notify).toHaveBeenCalledWith("当前版本 0.1.0；自动检查更新将在阶段 5 接入");
+    await waitFor(() => expect(notify).toHaveBeenCalledWith("请在阅间桌面版中检查更新"));
     expect(screen.getByRole("button", { name: "从 GitHub URL 导入" })).toBeInTheDocument();
   });
 
