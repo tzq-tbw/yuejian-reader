@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { version } from "../../src-tauri/tauri.conf.json";
 import { SettingsPage } from "./SettingsPage";
 import { createMemoryStorage, createMockApi } from "../data/mock";
 import type { AppFileService } from "../data/files";
@@ -70,7 +71,7 @@ describe("设置页", () => {
 
     await user.click(await screen.findByRole("button", { name: "备份数据库" }));
     expect(backup).toHaveBeenCalledWith("D:/backups/reader.db");
-    expect(screen.getAllByText(/当前版本 0\.1\.0/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(("当前版本 " + version)).length).toBeGreaterThan(0);
     await user.click(screen.getByRole("button", { name: "检查更新" }));
     await waitFor(() => expect(notify).toHaveBeenCalledWith("请在阅间桌面版中检查更新"));
     expect(screen.getByRole("button", { name: "从 GitHub URL 导入" })).toBeInTheDocument();
@@ -86,10 +87,7 @@ describe("设置页", () => {
     });
     const user = userEvent.setup();
     render(<SettingsPage api={api} files={files} notify={vi.fn()} onDataDeleted={vi.fn()} />);
-    expect(await screen.findByText("四级高频")).toBeInTheDocument();
-    expect(screen.getByText("六级高频")).toBeInTheDocument();
-    expect(screen.getByText("考研高频")).toBeInTheDocument();
-    expect(screen.getAllByText("1,600 词")).toHaveLength(3);
+    expect(await screen.findByText(/还没有词表/)).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "从本地 TXT / CSV 导入" }));
     const name = await screen.findByLabelText("词表名称");
@@ -133,7 +131,7 @@ describe("设置页", () => {
     expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 
-  it("预填 DeepSeek 与通义千问并以密码框保存 API Key", async () => {
+  it("按供应商提供模型下拉选项，保存选中模型和密码框中的 Key", async () => {
     const user = userEvent.setup();
     const notify = vi.fn();
     render(<SettingsPage api={createMockApi(createMemoryStorage())} notify={notify} onDataDeleted={vi.fn()} />);
@@ -141,7 +139,9 @@ describe("设置页", () => {
     const provider = await screen.findByLabelText("供应商");
     await user.selectOptions(provider, "deepseek");
     expect(screen.getByLabelText("Base URL")).toHaveValue("https://api.deepseek.com/v1");
-    expect(screen.getByLabelText("模型", { exact: true })).toHaveValue("deepseek-chat");
+    const model = screen.getByRole("combobox", { name: "模型" });
+    expect(model).toHaveValue("deepseek-flash");
+    await user.selectOptions(model, "deepseek-v4-pro");
     const key = screen.getByLabelText("API Key");
     expect(key).toHaveAttribute("type", "password");
     await user.type(key, "deepseek-test-key");
@@ -149,10 +149,14 @@ describe("设置页", () => {
     expect(notify).toHaveBeenCalledWith("模型服务已保存：DeepSeek");
     expect(window.localStorage.getItem("yuejian.modelService")).not.toContain("deepseek-test-key");
     expect(JSON.parse(window.localStorage.getItem("yuejian.modelService")!).apiKey).toBeUndefined();
+    expect(JSON.parse(window.localStorage.getItem("yuejian.modelService")!).model).toBe("deepseek-v4-pro");
 
     await user.selectOptions(provider, "qwen");
     expect(screen.getByLabelText("Base URL")).toHaveValue("https://dashscope.aliyuncs.com/compatible-mode/v1");
-    expect(screen.getByLabelText("模型", { exact: true })).toHaveValue("qwen-plus");
+    expect(model).toHaveValue("qwen-plus");
+    expect(screen.getByRole("option", { name: "qwen-flash" })).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: "deepseek-v4-pro" })).not.toBeInTheDocument();
+    expect(key).toHaveValue("");
   });
 
   it("两次确认后清空全部业务数据", async () => {

@@ -12,12 +12,14 @@ interface ArticleDraftFieldsProps {
   value: ArticleDraft;
   onChange: (next: ArticleDraft) => void;
   disabled?: boolean;
+  focusBody?: boolean;
 }
 
 export function ArticleDraftFields({
   value,
   onChange,
   disabled,
+  focusBody = false,
 }: ArticleDraftFieldsProps) {
   const listId = useId();
   const paragraphCount = parsePastedText(value.text).length;
@@ -30,7 +32,7 @@ export function ArticleDraftFields({
         type="text"
         value={value.title}
         disabled={disabled}
-        data-autofocus
+        data-autofocus={!focusBody || undefined}
         onChange={(event) => onChange({ ...value, title: event.target.value })}
       />
       <label htmlFor={`${listId}-topic`}>主题</label>
@@ -51,6 +53,7 @@ export function ArticleDraftFields({
       <textarea
         id={`${listId}-text`}
         value={value.text}
+        data-autofocus={focusBody || undefined}
         disabled={disabled}
         spellCheck={false}
         lang="en"

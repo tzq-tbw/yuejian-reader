@@ -1,13 +1,7 @@
-use rusqlite::{params, Connection, Transaction};
+use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use uuid::Uuid;
-
-const BUILTIN_LISTS: &[(&str, &str)] = &[
-    ("cet4", include_str!("../wordlists/cet4.txt")),
-    ("cet6", include_str!("../wordlists/cet6.txt")),
-    ("ky", include_str!("../wordlists/ky.txt")),
-];
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -34,24 +28,6 @@ pub struct ImportWordlistInput {
     pub name: String,
     pub source: String,
     pub content: String,
-}
-
-pub fn seed_builtin_wordlists(tx: &Transaction<'_>) -> Result<(), String> {
-    for (list_id, contents) in BUILTIN_LISTS {
-        for (index, word) in contents
-            .lines()
-            .map(str::trim)
-            .filter(|word| !word.is_empty())
-            .enumerate()
-        {
-            tx.execute(
-                "INSERT OR IGNORE INTO wordlist_words (list_id, word, position) VALUES (?1, ?2, ?3)",
-                params![list_id, word, index as i64],
-            )
-            .map_err(|error| format!("初始化内置词表 {list_id} 失败：{error}"))?;
-        }
-    }
-    Ok(())
 }
 
 fn first_csv_field(line: &str) -> String {
@@ -245,23 +221,25 @@ mod tests {
     }
 
     #[test]
-    fn migration_seeds_three_separate_builtin_lists_once() {
-        let mut conn = memory_db();
+    fn upgrade_removes_only_old_builtin_wordlists() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        run_migrations(&mut conn, &MIGRATIONS[..6]).unwrap();
+        conn.execute_batch(
+            "INSERT INTO wordlists (id, name, source, built_in) VALUES
+             ('cet4', 'Old test list', 'fixture', 1), ('custom', 'Imported list', 'local.txt', 0);
+             INSERT INTO wordlist_words (list_id, word, position) VALUES
+             ('cet4', 'test', 0), ('custom', 'address', 0);"
+        ).unwrap();
+        assert_eq!(run_migrations(&mut conn, MIGRATIONS).unwrap(), 1);
         let lists = list_wordlists(&conn).unwrap();
-        assert_eq!(lists.len(), 3);
-        assert!(lists
-            .iter()
-            .all(|list| list.enabled && list.built_in && list.word_count == 1600));
-        assert_eq!(
-            list_words(&conn, Some(vec!["cet4".to_string()])).unwrap()[0]
-                .words
-                .len(),
-            1600
-        );
-        assert!(list_words(&conn, Some(Vec::new())).unwrap().is_empty());
-        assert!(delete_wordlist(&conn, "cet4").unwrap());
-        run_migrations(&mut conn, MIGRATIONS).unwrap();
-        assert_eq!(list_wordlists(&conn).unwrap().len(), 2);
+        assert_eq!(lists.len(), 1);
+        assert_eq!(lists[0].id, "custom");
+        assert_eq!(list_words(&conn, None).unwrap()[0].words, vec!["address"]);
+        let remaining: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM wordlist_words WHERE list_id = 'cet4'", [], |row| row.get(0),
+        ).unwrap();
+        assert_eq!(remaining, 0);
+        assert!(list_wordlists(&memory_db()).unwrap().is_empty());
     }
 
     #[test]
@@ -299,6 +277,6 @@ mod tests {
             },
         )
         .is_err());
-        assert_eq!(list_wordlists(&conn).unwrap().len(), 3);
+        assert!(list_wordlists(&conn).unwrap().is_empty());
     }
 }

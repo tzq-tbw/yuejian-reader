@@ -16,8 +16,3 @@ CREATE TABLE wordlist_words (
 
 CREATE INDEX idx_wordlist_words_lookup
     ON wordlist_words(list_id, word);
-
-INSERT INTO wordlists (id, name, source, enabled, built_in) VALUES
-    ('cet4', '四级高频', 'ECDICT · cet4 · 高频前 1600 词', 1, 1),
-    ('cet6', '六级高频', 'ECDICT · cet6 · 高频前 1600 词', 1, 1),
-    ('ky', '考研高频', 'ECDICT · 考研标签 · 高频前 1600 词', 1, 1);

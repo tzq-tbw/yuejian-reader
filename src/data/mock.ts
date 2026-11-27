@@ -34,9 +34,6 @@ import {
   localDateKey,
   nextSchedule,
 } from "../review/schedule";
-import { CET4_WORDS } from "../language/wordlists/cet4";
-import { CET6_WORDS } from "../language/wordlists/cet6";
-import { POSTGRADUATE_WORDS } from "../language/wordlists/postgraduate";
 import { parseWordlist } from "../language/wordlistImport";
 import { wordFavoritesCsv } from "../collection/wordExport";
 import type {
@@ -200,35 +197,7 @@ function defaultState(): MockState {
     longSentences: [],
     schedules: [],
     reviewEvents: [],
-    wordlists: [
-      {
-        id: "cet4",
-        name: "四级高频",
-        source: "ECDICT · cet4 · 高频前 1600 词",
-        enabled: true,
-        builtIn: true,
-        createdAt: now,
-        words: [...CET4_WORDS],
-      },
-      {
-        id: "cet6",
-        name: "六级高频",
-        source: "ECDICT · cet6 · 高频前 1600 词",
-        enabled: true,
-        builtIn: true,
-        createdAt: now,
-        words: [...CET6_WORDS],
-      },
-      {
-        id: "ky",
-        name: "考研高频",
-        source: "ECDICT · 考研标签 · 高频前 1600 词",
-        enabled: true,
-        builtIn: true,
-        createdAt: now,
-        words: [...POSTGRADUATE_WORDS],
-      },
-    ],
+    wordlists: [],
     essayDocuments: [],
   };
 }
@@ -305,7 +274,9 @@ export function createMockApi(storage: StorageLike = createMemoryStorage()): Rea
   state.longSentences = Array.isArray(state.longSentences) ? state.longSentences : [];
   state.schedules = Array.isArray(state.schedules) ? state.schedules : [];
   state.reviewEvents = Array.isArray(state.reviewEvents) ? state.reviewEvents : [];
-  state.wordlists = Array.isArray(state.wordlists) ? state.wordlists : defaultState().wordlists;
+  state.wordlists = Array.isArray(state.wordlists)
+    ? state.wordlists.filter((list) => !(list.builtIn && ["cet4", "cet6", "ky"].includes(list.id)))
+    : [];
   state.essayDocuments = Array.isArray(state.essayDocuments) ? state.essayDocuments : [];
   const nextId = (rows: Array<{ id: number }>, stored: unknown) =>
     Math.max(
@@ -523,15 +494,13 @@ export function createMockApi(storage: StorageLike = createMemoryStorage()): Rea
       return detail(state, articleById(id));
     },
 
-    async pasteArticle(input: { title: string; text: string; topic?: string }) {
-      const title = input.title.trim();
+    async pasteArticle(input: { title?: string; text: string; topic?: string }) {
       const paragraphs = parsePastedText(input.text);
-      if (!title) throw new Error("标题不能为空");
       if (!paragraphs.length) throw new Error("正文不能为空，至少粘贴一段英文");
       const now = new Date().toISOString();
       const article: MockArticle = {
         id: state.nextArticleId++,
-        title,
+        title: input.title?.trim() || [...paragraphs[0]].slice(0, 60).join("").trimEnd(),
         paragraphs,
         topic: input.topic?.trim() || classifyTopic(paragraphs.join(" ")),
         version: 1,

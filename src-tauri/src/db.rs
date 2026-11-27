@@ -63,6 +63,7 @@ pub struct UpdateArticleInput {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PasteArticleInput {
+    #[serde(default)]
     pub title: String,
     pub text: String,
     #[serde(default)]
@@ -274,6 +275,11 @@ pub const MIGRATIONS: &[Migration] = &[
         name: "essay_history",
         sql: include_str!("../migrations/0006_essay_history.sql"),
     },
+    Migration {
+        version: 7,
+        name: "remove_test_wordlists",
+        sql: include_str!("../migrations/0007_remove_test_wordlists.sql"),
+    },
 ];
 
 pub fn run_migrations(conn: &mut Connection, migrations: &[Migration]) -> Result<usize, String> {
@@ -305,9 +311,6 @@ pub fn run_migrations(conn: &mut Connection, migrations: &[Migration]) -> Result
             .map_err(|e| format!("开始迁移事务失败：{e}"))?;
         tx.execute_batch(migration.sql)
             .map_err(|e| format!("迁移 {} 执行失败：{e}", migration.version))?;
-        if migration.version == 5 {
-            crate::wordlists::seed_builtin_wordlists(&tx)?;
-        }
         tx.execute(
             "INSERT INTO schema_migrations (version, name) VALUES (?1, ?2)",
             params![migration.version, migration.name],
@@ -663,14 +666,20 @@ pub fn paste_article(
     text: &str,
     topic: Option<&str>,
 ) -> Result<ArticleDetail, String> {
-    let title = title.trim();
-    if title.is_empty() {
-        return Err("标题不能为空".into());
-    }
     let paragraphs = parse_pasted_text(text);
     if paragraphs.is_empty() {
         return Err("正文不能为空，至少粘贴一段英文".into());
     }
+    let title = if title.trim().is_empty() {
+        paragraphs[0]
+            .chars()
+            .take(60)
+            .collect::<String>()
+            .trim_end()
+            .to_owned()
+    } else {
+        title.trim().to_owned()
+    };
     // 手填主题优先；空主题仍按正文自动分类。
     let topic = match topic.map(str::trim).filter(|topic| !topic.is_empty()) {
         Some(topic) => topic.to_string(),
@@ -1708,10 +1717,18 @@ mod tests {
     }
 
     #[test]
+    fn paste_can_derive_title_and_topic_from_body() {
+        let mut conn = memory_db();
+        let article = paste_article(&mut conn, " ", "Students learn in a classroom.", None).unwrap();
+        assert_eq!(article.summary.title, "Students learn in a classroom.");
+        assert_eq!(article.summary.topic, "教育与学习");
+    }
+
+    #[test]
     fn empty_paste_is_rejected() {
         let mut conn = memory_db();
         assert!(paste_article(&mut conn, "Title", "   \n\n  ", None).is_err());
-        assert!(paste_article(&mut conn, "   ", "Some text", None).is_err());
+        assert!(paste_article(&mut conn, "   ", "   ", None).is_err());
     }
 
     #[test]

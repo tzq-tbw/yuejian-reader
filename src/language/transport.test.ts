@@ -17,6 +17,19 @@ describe("浏览器模型传输", () => {
     await expect(transport.chat({ messages: [] })).rejects.toThrow(`429：${"x".repeat(300)}…`);
   });
 
+  it("DeepSeek 直连关闭默认思考，给词卡输出留足空间", async () => {
+    const transport = createFetchTransport({
+      ...DEFAULT_MODEL_CONFIG,
+      baseUrl: "https://api.deepseek.com/v1",
+      model: "deepseek-flash",
+    }, async (_url, init) => {
+      const body = JSON.parse(String(init?.body));
+      expect(body.thinking).toEqual({ type: "disabled" });
+      return new Response('{"fixture":true}');
+    });
+    await expect(transport.chat({ messages: [] })).resolves.toEqual({ fixture: true });
+  });
+
   it("区分无效 JSON 与连接错误", async () => {
     const invalid = createFetchTransport(DEFAULT_MODEL_CONFIG, async () => new Response("<html>"));
     await expect(invalid.chat({ messages: [] })).rejects.toThrow("不是有效 JSON");

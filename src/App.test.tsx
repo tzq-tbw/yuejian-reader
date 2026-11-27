@@ -35,7 +35,7 @@ async function pasteViaUi(user: ReturnType<typeof userEvent.setup>) {
   await screen.findByRole("heading", { name: "资料库" });
   await user.click(screen.getByRole("button", { name: "粘贴新文章" }));
   await user.click(screen.getByRole("button", { name: "保存文章" }));
-  expect(await screen.findByRole("alert")).toHaveTextContent("标题不能为空");
+  expect(await screen.findByRole("alert")).toHaveTextContent("正文不能为空");
   await user.type(screen.getByLabelText("标题"), TITLE);
   fireEvent.change(screen.getByLabelText("正文"), {
     target: {
@@ -173,6 +173,22 @@ describe("本机阅读骨架", () => {
     await waitFor(() => {
       expect(document.activeElement).toBe(opener);
     });
+  });
+
+  it("在资料库只粘贴正文即可保存", async () => {
+    const { api, user } = await renderApp();
+    await user.click(screen.getByRole("button", { name: "资料库" }));
+    await user.click(screen.getByRole("button", { name: "粘贴新文章" }));
+    const body = screen.getByLabelText("正文");
+    await waitFor(() => expect(body).toHaveFocus());
+    await user.type(body, "Students learn in a quiet classroom.");
+    await user.click(screen.getByRole("button", { name: "保存文章" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(await api.listLibrary()).toEqual(expect.arrayContaining([
+      expect.objectContaining({ articles: expect.arrayContaining([
+        expect.objectContaining({ title: "Students learn in a quiet classroom.", topic: "教育与学习" }),
+      ]) }),
+    ]));
   });
 
   it("粘贴时手填的主题会持久保存", async () => {

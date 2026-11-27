@@ -63,6 +63,7 @@ export function SettingsPage({
       ...DEFAULT_MODEL_CONFIG,
     },
   );
+  const presetModels = MODEL_PROVIDER_PRESETS[modelDraft.provider].models;
 
   const refreshWordlists = useCallback(async () => {
     try {
@@ -80,8 +81,11 @@ export function SettingsPage({
 
   useEffect(() => {
     let cancelled = false;
+    const savedProvider = readStoredModelService()?.provider ?? "magpie";
     loadModelApiKey().then((apiKey) => {
-      if (!cancelled) setModelDraft((current) => ({ ...current, apiKey }));
+      if (!cancelled) setModelDraft((current) =>
+        current.provider === savedProvider && !current.apiKey ? { ...current, apiKey } : current,
+      );
     }).catch((cause) => {
       if (!cancelled) notify(`读取 API Key 失败：${errorMessage(cause)}`, "error");
     });
@@ -218,8 +222,8 @@ export function SettingsPage({
                     ...current,
                     provider,
                     baseUrl: preset.baseUrl,
-                    model: preset.model,
-                    apiKey: provider === "magpie" ? "" : current.apiKey,
+                    model: preset.models[0],
+                    apiKey: "",
                   }));
                 }}>
                   {Object.entries(MODEL_PROVIDER_PRESETS).map(([id, preset]) => (
@@ -233,7 +237,12 @@ export function SettingsPage({
               </label>
               <label>
                 模型
-                <input type="text" value={modelDraft.model} onChange={(event) => setModelDraft((current) => ({ ...current, model: event.target.value }))} />
+                <select value={modelDraft.model} onChange={(event) => setModelDraft((current) => ({ ...current, model: event.target.value }))}>
+                  {!presetModels.includes(modelDraft.model) && (
+                    <option value={modelDraft.model}>{modelDraft.model}（原有配置）</option>
+                  )}
+                  {presetModels.map((model) => <option key={model} value={model}>{model}</option>)}
+                </select>
               </label>
               <label>
                 API Key

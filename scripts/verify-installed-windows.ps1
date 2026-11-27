@@ -39,7 +39,7 @@ with closing(sqlite3.connect(db, timeout=5)) as conn, conn:
     else:
         assert conn.execute("PRAGMA quick_check").fetchone()[0] == "ok"
         versions = [row[0] for row in conn.execute("SELECT version FROM schema_migrations ORDER BY version")]
-        if versions != [1, 2, 3, 4, 5, 6]:
+        if versions != [1, 2, 3, 4, 5, 6, 7]:
             print(f"Waiting for migration: observed versions {versions}")
             sys.exit(2)
         article = conn.execute("SELECT title, paragraphs FROM articles").fetchone()
@@ -66,7 +66,7 @@ foreach ($attempt in 1, 2) {
         if (!$ready) {
             throw 'Installed application did not finish starting and migrating within 60 seconds'
         }
-        Write-Host "Launch $attempt passed: window, migration versions 1–6, article and default section."
+        Write-Host "Launch $attempt passed: window, migration versions 1–7, article and default section."
     } finally {
         if (!$app.HasExited) {
             $null = $app.CloseMainWindow()

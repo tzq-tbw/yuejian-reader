@@ -24,9 +24,6 @@ describe("mock workspace API", () => {
 
   it("rejects empty paste input", async () => {
     const api = createMockApi(createMemoryStorage());
-    await expect(api.pasteArticle({ title: "", text: "Body." })).rejects.toThrow(
-      "标题不能为空",
-    );
     await expect(api.pasteArticle({ title: "Title", text: "\n\n  " })).rejects.toThrow(
       "正文不能为空",
     );

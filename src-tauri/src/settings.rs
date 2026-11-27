@@ -199,6 +199,6 @@ mod tests {
                 row.get(0)
             })
             .unwrap();
-        assert_eq!(migrations, 6);
+        assert_eq!(migrations, 7);
     }
 }

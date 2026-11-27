@@ -1,7 +1,3 @@
-import { CET4_WORDS } from "./wordlists/cet4";
-import { CET6_WORDS } from "./wordlists/cet6";
-import { POSTGRADUATE_WORDS } from "./wordlists/postgraduate";
-
 export interface VocabularyList {
   id: string;
   label: string;
@@ -59,24 +55,9 @@ export function createVocabularyList(
   };
 }
 
-export const CET4_LIST = createVocabularyList("cet4", "四级高频", CET4_WORDS);
-export const CET6_LIST = createVocabularyList("cet6", "六级高频", CET6_WORDS);
-export const POSTGRADUATE_LIST = createVocabularyList(
-  "ky",
-  "考研高频",
-  POSTGRADUATE_WORDS,
-);
-
-/** 默认同时启用三表；正文保留每个词命中的全部类别。 */
-export const DEFAULT_VOCABULARY_LISTS: readonly VocabularyList[] = [
-  CET4_LIST,
-  CET6_LIST,
-  POSTGRADUATE_LIST,
-];
-
 export function vocabularyMatches(
   word: string,
-  lists: readonly VocabularyList[] = DEFAULT_VOCABULARY_LISTS,
+  lists: readonly VocabularyList[] = [],
 ): VocabularyMatch[] {
   return lists
     .filter((list) => list.contains(word))
@@ -88,7 +69,7 @@ const WORD_PATTERN = /[A-Za-z]+(?:['’\-][A-Za-z]+)*/g;
 /** 把段落切成“词 / 非词”片段，保留原文所有字符，选区偏移不受标色影响。 */
 export function tokenizeWithVocabulary(
   text: string,
-  lists: readonly VocabularyList[] = DEFAULT_VOCABULARY_LISTS,
+  lists: readonly VocabularyList[] = [],
 ): TextToken[] {
   const tokens: TextToken[] = [];
   let lastIndex = 0;

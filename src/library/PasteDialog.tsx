@@ -39,10 +39,6 @@ export function PasteDialog({
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     setError("");
-    if (!draft.title.trim()) {
-      setError("标题不能为空");
-      return;
-    }
     if (!parsePastedText(draft.text).length) {
       setError("正文不能为空，至少粘贴一段英文");
       return;
@@ -73,10 +69,10 @@ export function PasteDialog({
     >
       <form onSubmit={submit}>
         <p className="sub">
-          一次粘贴生成一篇，段落会被保留。保存后自动加入默认分区「
+          只需粘贴正文。标题和主题可选，留空时从正文生成标题并自动分类。保存后加入默认分区「
           {defaultSectionName}」，也可以在资料库中再加入其他分区。
         </p>
-        <ArticleDraftFields value={draft} onChange={setDraft} disabled={busy} />
+        <ArticleDraftFields value={draft} onChange={setDraft} disabled={busy} focusBody />
         {error && <div className="error" role="alert">{error}</div>}
         <div className="actions">
           <button type="button" onClick={onClose} disabled={busy}>

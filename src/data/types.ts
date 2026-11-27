@@ -213,7 +213,7 @@ export interface ReaderApi {
   listLibrary(search?: string): Promise<LibraryGroup[]>;
   getArticle(id: number): Promise<ArticleDetail>;
   /** topic 省略或为空时由后端按正文自动分类。 */
-  pasteArticle(input: { title: string; text: string; topic?: string }): Promise<ArticleDetail>;
+  pasteArticle(input: { title?: string; text: string; topic?: string }): Promise<ArticleDetail>;
   importSuite(input: ImportSuiteInput): Promise<ImportSuiteResult>;
   updateArticle(input: UpdateArticleInput): Promise<ArticleDetail>;
   addArticlesToSection(sectionId: string, articleIds: number[]): Promise<AddResult>;

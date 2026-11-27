@@ -55,6 +55,8 @@ struct ChatBody<'a> {
     temperature: f64,
     #[serde(skip_serializing_if = "Option::is_none")]
     max_tokens: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    thinking: Option<serde_json::Value>,
     stream: bool,
 }
 
@@ -81,11 +83,15 @@ async fn model_chat(input: ModelChatInput) -> Result<serde_json::Value, String> 
         .build()
         .map_err(|error| format!("无法初始化模型请求：{error}"))?;
 
+    let direct_deepseek = reqwest::Url::parse(&url)
+        .is_ok_and(|url| url.host_str() == Some("api.deepseek.com"));
     let mut request = client.post(&url).json(&ChatBody {
         model: &input.model,
         messages: &input.messages,
         temperature: input.temperature.unwrap_or(0.2),
         max_tokens: input.max_tokens,
+        // DeepSeek defaults to thinking, which can consume the word-card output budget.
+        thinking: direct_deepseek.then(|| serde_json::json!({ "type": "disabled" })),
         stream: false,
     });
     let key = input.api_key.trim();

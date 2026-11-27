@@ -24,7 +24,9 @@ export function createFetchTransport(
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), config.timeoutMs);
       try {
-        const response = await fetchImpl(joinUrl(config.baseUrl, "chat/completions"), {
+        const endpoint = joinUrl(config.baseUrl, "chat/completions");
+        const directDeepSeek = new URL(endpoint).hostname === "api.deepseek.com";
+        const response = await fetchImpl(endpoint, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -37,6 +39,7 @@ export function createFetchTransport(
             messages: call.messages,
             temperature: call.temperature ?? config.temperature,
             ...(call.maxTokens ? { max_tokens: call.maxTokens } : {}),
+            ...(directDeepSeek ? { thinking: { type: "disabled" } } : {}),
             stream: false,
           }),
           signal: controller.signal,

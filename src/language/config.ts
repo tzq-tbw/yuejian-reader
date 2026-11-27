@@ -26,22 +26,22 @@ function isDesktopRuntime(): boolean {
 export const MODEL_PROVIDER_PRESETS: Record<ModelProvider, {
   label: string;
   baseUrl: string;
-  model: string;
+  models: readonly [string, ...string[]];
 }> = {
   magpie: {
     label: "默认 Magpie 代理",
     baseUrl: DEFAULT_MODEL_CONFIG.baseUrl,
-    model: DEFAULT_MODEL_CONFIG.model,
+    models: [DEFAULT_MODEL_CONFIG.model],
   },
   deepseek: {
     label: "DeepSeek",
     baseUrl: "https://api.deepseek.com/v1",
-    model: "deepseek-chat",
+    models: ["deepseek-flash", "deepseek-v4-pro"],
   },
   qwen: {
     label: "通义千问",
     baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1",
-    model: "qwen-plus",
+    models: ["qwen-plus", "qwen-flash", "qwen-max"],
   },
 };
 
