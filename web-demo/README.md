@@ -1,37 +1,37 @@
-# 英语精读 · Python 网页演示版
+# 英语精读网页版
 
-这是适合课堂展示的独立网页项目，使用 FastAPI、原生 JavaScript 和 SQLite。可以粘贴英文或导入带文字层的试卷，划词查义、翻译和析句，再收藏词句并复习。
+在本机浏览器里阅读英文、查词和复习。可以粘贴文章，也可以从有文字层的真题 PDF 提取阅读文章。支持划词查义、句式解析、翻译选区或段落、全文翻译，以及收藏生词和长难句。
 
-## 启动
+## 启动网页
 
-用 Python 3.11 或更新版本。在仓库根目录打开 PowerShell，逐行执行以下命令：
+需要 Python 3.11 或更新版本。在 [GitHub 仓库](https://github.com/tzq-tbw/yuejian-reader)点击「Code → Download ZIP」，解压后进入 `web-demo` 目录，在这里打开 PowerShell 并安装依赖：
 
 ~~~powershell
-cd web-demo
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
 ~~~
 
-如要演示 AI，在同一个窗口配置自己的 DeepSeek Key。输入时屏幕会遮挡 Key。这里明确选用 DeepSeek 当前支持的 `deepseek-flash`。
+依赖只需安装一次。使用时，在 `web-demo` 目录启动服务：
+
+~~~powershell
+.\.venv\Scripts\python.exe -m uvicorn backend.main:app --host 127.0.0.1 --port 8002
+~~~
+
+启动后用同一台电脑打开 [英语精读网页](http://127.0.0.1:8002/)。使用期间保留 PowerShell 窗口，结束时按 Ctrl+C。
+
+## 启用 AI
+
+使用查词、翻译或解析前，在启动服务的 **同一个 PowerShell 窗口**执行下面两行。第一行会提示输入你的 DeepSeek API Key，输入内容会被遮挡。如果网页服务已经运行，先按 Ctrl+C 停止，配置好再启动。
 
 ~~~powershell
 $env:DEEPSEEK_API_KEY = [System.Net.NetworkCredential]::new('', (Read-Host 'DeepSeek API Key' -AsSecureString)).Password
 $env:DEEPSEEK_MODEL = 'deepseek-flash'
 ~~~
 
-启动服务：
+## 使用方法
 
-~~~powershell
-.\.venv\Scripts\python.exe -m uvicorn backend.main:app --host 127.0.0.1 --port 8002
-~~~
+1. **添加文章**。在「文章库」填写标题、粘贴英文正文，再点「保存文章」。也可以选择有文字层的整套 PDF，点「导入试卷」。若试卷版式无法识别，可以复制阅读正文再粘贴。
+2. **精读**。打开文章卡片。鼠标选中一个词，网页会显示语境义。选中多个词可点「翻译」或「解析」。全部或单段翻译使用对应按钮。
+3. **收藏和复习**。在查词或解析结果旁收藏词语或长难句，再打开顶部的「单词复习」或「长难句复习」。先回忆再揭晓，点「忘了」会排回本轮队尾。
 
-浏览器打开 [演示页面](http://127.0.0.1:8002/)。[FastAPI 接口试用页](http://127.0.0.1:8002/docs) 可以直接提交和查看请求。按 Ctrl+C 停止服务。导入、编辑和复习已有收藏无需 API Key。网页数据保存在本目录的 `reader.sqlite3` 中。
-
-## 展示一条 AI 请求
-
-1. 粘贴例句 `We need to address the problem before the meeting.`，填一个标题并保存。打开文章，选中 `address`。
-2. 打开浏览器 F12 的「网络」，查看 `POST /api/analysis` 的请求数据。前端发送选中的词、原句和操作类型。
-3. 顺着 [reader.js](frontend/reader.js) 的 `explain`，追到 [main.py](backend/main.py) 的 `analyze_text`，再看 [analysis.py](backend/analysis.py) 的 `analyze`。重点讲 URL、Bearer 鉴权、JSON 请求体、超时以及怎样从返回值取出模型答案。
-4. 再用 `Please write your address on the envelope.` 查一次同一个词，观察原句如何影响释义。
-
-在本目录运行 `.\.venv\Scripts\python.exe smoke_check.py` 可以用临时数据库检查首页、文章、收藏和样卷导入。真实模型请求由你的 Key 和服务配置决定。
+文章和收藏保存在本机。添加文章、编辑正文和复习已有收藏可以离线使用。
